@@ -53,7 +53,7 @@ function firstRunRows(map, state) {
       zoomFactor: s.zoomFactor,
     });
   }
-  rows.sort((a, b) => Number(b.isInternal) - Number(a.isInternal));
+  rows.sort((a, b) => Number(b.isInternal) - Number(a.isInternal) || String(a.name ?? '').localeCompare(String(b.name ?? '')));
   return rows;
 }
 
@@ -126,8 +126,9 @@ async function dispatch(message) {
       return getPopupState(message);
     case MSG.CONFIRM_SETUP: {
       const keys = await engine.confirmSetup({ screens: message.screens });
-      // Respond immediately; normalize in the background (doc §7).
-      normalizeAfterConfirm(keys);
+      // Respond immediately; normalize in the background (doc §7). The job
+      // gets its own copy so the response payload can never alias it.
+      normalizeAfterConfirm([...keys]);
       return { ok: true, keys };
     }
     case MSG.SET_ENABLED:

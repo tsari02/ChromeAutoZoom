@@ -1,19 +1,25 @@
+// message-router.js — the v3 message table (engineering doc v3 §8 / §10) and
+// the A2 regression. Asserts through the mock's recorded chrome.* calls.
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   installChromeMock,
   DISPLAY_INTERNAL,
   DISPLAY_EXTERNAL,
-  DISPLAY_EXTERNAL_2,
+  DISPLAY_EXTERNAL_4K,
+  DISPLAY_EXTERNAL_1080P,
   windowOn,
   onboardedLocal,
+  deltaRows,
 } from './_chrome-mock.js';
 import { invalidate as invalidateDisplays } from '../src/lib/display-cache.js';
-import { handleMessage, EXTERNAL_DEFAULT_ROW } from '../src/background/message-router.js';
-import { MSG, SETUP_MODE } from '../src/lib/constants.js';
+import { handleMessage } from '../src/background/message-router.js';
+import { MSG } from '../src/lib/constants.js';
 import * as storage from '../src/lib/storage.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const EXT = 'ext:lg-ultrafine';
+const INT = 'internal';
 
 /** Send a message through the real listener and resolve with the response. */
 function send(message) {
@@ -26,28 +32,42 @@ function send(message) {
 describe('message-router', () => {
   beforeEach(() => invalidateDisplays());
 
-  test('GET_SETUP_DATA (onboarding, MacBook only) lists the built-in display plus the absent external class', async () => {
-    installChromeMock({ displays: [DISPLAY_INTERNAL], local: { ...onboardedLocal(), onboardingCompleted: false, screens: {} } });
-    const res = await send({ type: MSG.GET_SETUP_DATA, mode: SETUP_MODE.ONBOARDING });
-    assert.equal(res.ok, true);
-    const rows = res.result.rows;
-    assert.equal(rows.length, 2);
-    assert.deepEqual(rows.map((r) => r.key), ['internal', EXTERNAL_DEFAULT_ROW]);
-    assert.equal(rows[0].zoomFactor, 1.0);
-    assert.equal(rows[1].zoomFactor, 1.25);
-    assert.equal(rows[1].connected, false);
-    assert.equal(res.result.ladder.length, 17);
+  test('GET_POPUP_STATE.firstRun.rows lists connected displays with map values (4K → 150%, 1080p → 100%)', async () => {
+    const mock = installChromeMock({
+      displays: [DISPLAY_EXTERNAL_4K, DISPLAY_INTERNAL, DISPLAY_EXTERNAL_1080P],
+      local: { ...onboardedLocal(), onboardingCompleted: false, screens: {} },
+      windows: [windowOn(DISPLAY_INTERNAL, 1)],
+      tabs: [{ id: 11, windowId: 1, url: 'https://example.com/', active: true }],
+    });
+    const res = await send({ type: MSG.GET_POPUP_STATE, tabId: 11, windowId: 1 });
+    assert.equal(res.ok, true, res.error);
+    const r = res.result;
+    assert.equal(r.onboardingCompleted, false);
+    assert.ok(r.firstRun, 'firstRun block present before Accept');
+    assert.deepEqual(
+      r.firstRun.rows.map((row) => [row.key, row.recommended, row.zoomFactor, row.width, row.height]),
+      [
+        ['internal', 1.0, 1.0, 1512, 982],
+        ['ext:benq-gw2480', 1.0, 1.0, 1920, 1080],
+        ['ext:lg-hdr-4k', 1.5, 1.5, 3840, 2160],
+      ],
+      'internal first, then externals sorted by name; selects pre-filled from the map',
+    );
+    assert.deepEqual(r.firstRun.rows.map((row) => row.name), ['Built-in Retina Display', 'BenQ GW2480', 'LG HDR 4K']);
+    assert.equal(r.ladder.length, 17);
+    assert.equal(mock.callsTo('tabs.setZoom').length, 0, 'nothing zoomed before Accept');
+    assert.equal(mock.callsTo('windows.create').length, 0, 'no setup window');
+    assert.equal(r.screen.key, INT, 'current screen still resolved');
   });
 
-  test('GET_SETUP_DATA (onboarding, clamshell) lists externals plus the absent built-in row', async () => {
-    installChromeMock({ displays: [DISPLAY_EXTERNAL, DISPLAY_EXTERNAL_2], local: { ...onboardedLocal(), onboardingCompleted: false, screens: {} } });
-    const res = await send({ type: MSG.GET_SETUP_DATA, mode: SETUP_MODE.ONBOARDING });
-    const rows = res.result.rows;
-    assert.deepEqual(rows.map((r) => r.key).sort(), ['ext:dell-u2723qe', 'ext:lg-ultrafine', 'internal']);
-    assert.equal(rows.find((r) => r.key === 'internal').connected, false);
+  test('GET_POPUP_STATE after Accept has no firstRun block', async () => {
+    installChromeMock({ displays: [DISPLAY_INTERNAL, DISPLAY_EXTERNAL], local: onboardedLocal(), windows: [windowOn(DISPLAY_EXTERNAL, 2)], tabs: [{ id: 22, windowId: 2, url: 'https://example.com/', active: true }] });
+    const res = await send({ type: MSG.GET_POPUP_STATE, tabId: 22, windowId: 2 });
+    assert.equal(res.result.onboardingCompleted, true);
+    assert.equal(res.result.firstRun, undefined);
   });
 
-  test('CONFIRM_SETUP responds immediately, completes onboarding and normalizes in the background', async () => {
+  test('CONFIRM_SETUP sets onboardingCompleted, seeds learned defaults for changed externals only, and normalizes in the background', async () => {
     const mock = installChromeMock({
       displays: [DISPLAY_INTERNAL, DISPLAY_EXTERNAL],
       local: { ...onboardedLocal(), onboardingCompleted: false, screens: {} },
@@ -58,52 +78,82 @@ describe('message-router', () => {
         { id: 11, windowId: 1, url: 'https://example.com/', active: true },
       ],
     });
-    await send({ type: MSG.GET_SETUP_DATA, mode: SETUP_MODE.ONBOARDING });
-    const res = await send({
-      type: MSG.CONFIRM_SETUP,
-      screens: { internal: 1.0, 'ext:lg-ultrafine': 1.5 },
-      defaults: { internal: 1.0, external: 1.5 },
-    });
+    await send({ type: MSG.GET_POPUP_STATE, tabId: 22, windowId: 2 });
+    const res = await send({ type: MSG.CONFIRM_SETUP, screens: { [INT]: 1.1, [EXT]: 1.5 } });
+    assert.equal(res.ok, true);
+    assert.deepEqual([...res.result.keys].sort(), [EXT, INT]);
+    const st = await storage.getState();
+    assert.equal(st.onboardingCompleted, true);
+    assert.equal(st.screens[EXT].zoomFactor, 1.5);
+    assert.equal(st.screens[INT].zoomFactor, 1.1);
+    assert.deepEqual(st.learnedDefaults, { '2560x1440': 1.5 }, 'external 150% ≠ map 125% → learned; internal never learned');
+    assert.ok(!('defaults' in mock.chrome.storage.local._dump()));
+    await sleep(80); // background normalization
+    assert.equal(mock.zoomOf(22), 1.5);
+    assert.equal(mock.zoomOf(23), 1.5, 'background tab too');
+    assert.equal(mock.zoomOf(11), 1.1);
+    for (const id of [22, 23, 11]) assert.equal(mock.scopeOf(id), 'per-tab');
+  });
+
+  test('CONFIRM_SETUP with the recommended values learns nothing', async () => {
+    installChromeMock({ displays: [DISPLAY_INTERNAL, DISPLAY_EXTERNAL], local: { ...onboardedLocal(), onboardingCompleted: false, screens: {} } });
+    const res = await send({ type: MSG.CONFIRM_SETUP, screens: { [INT]: 1.0, [EXT]: 1.25 } });
     assert.equal(res.ok, true);
     const st = await storage.getState();
     assert.equal(st.onboardingCompleted, true);
-    assert.equal(st.screens['ext:lg-ultrafine'].zoomFactor, 1.5);
-    assert.equal(st.screens['ext:lg-ultrafine'].confirmed, true);
-    await sleep(80); // background normalization
-    assert.equal(mock.zoomOf(22), 1.5);
-    assert.equal(mock.zoomOf(23), 1.5);
-    assert.equal(mock.zoomOf(11), 1.0);
+    assert.deepEqual(st.learnedDefaults, {});
   });
 
-  test('CONFIRM_SETUP maps the external-default row to defaults.external', async () => {
-    installChromeMock({ displays: [DISPLAY_INTERNAL], local: { ...onboardedLocal(), onboardingCompleted: false, screens: {} } });
-    await send({ type: MSG.CONFIRM_SETUP, screens: { internal: 1.1, [EXTERNAL_DEFAULT_ROW]: 1.5 } });
-    const st = await storage.getState();
-    assert.deepEqual(st.defaults, { internal: 1.1, external: 1.5 });
-    assert.equal(st.screens.internal.zoomFactor, 1.1);
-    assert.ok(!(EXTERNAL_DEFAULT_ROW in st.screens));
-  });
-
-  test('GET_POPUP_STATE returns screen, site and saved screens for the active tab', async () => {
+  test('GET_POPUP_STATE returns screen (with recommended), site (inherited info) and saved screens for the active tab', async () => {
     installChromeMock({
       displays: [DISPLAY_INTERNAL, DISPLAY_EXTERNAL],
-      local: onboardedLocal({ siteStepDeltas: { 'news.ycombinator.com': 1 } }),
-      windows: [windowOn(DISPLAY_EXTERNAL, 2)],
-      tabs: [{ id: 22, windowId: 2, url: 'https://news.ycombinator.com/', active: true }],
+      local: onboardedLocal({ siteStepDeltas: { 'news.ycombinator.com': deltaRows({ [EXT]: 1 }) } }),
+      windows: [windowOn(DISPLAY_INTERNAL, 1), windowOn(DISPLAY_EXTERNAL, 2)],
+      tabs: [
+        { id: 11, windowId: 1, url: 'https://news.ycombinator.com/', active: true },
+        { id: 22, windowId: 2, url: 'https://news.ycombinator.com/', active: true },
+      ],
     });
-    const res = await send({ type: MSG.GET_POPUP_STATE, tabId: 22, windowId: 2 });
+    // On the internal screen the +1 is inherited from the external one.
+    let res = await send({ type: MSG.GET_POPUP_STATE, tabId: 11, windowId: 1 });
     assert.equal(res.ok, true);
-    const r = res.result;
+    let r = res.result;
     assert.equal(r.enabled, true);
-    assert.equal(r.screen.key, 'ext:lg-ultrafine');
+    assert.equal(r.screen.key, INT);
     assert.equal(r.screen.connected, true);
+    assert.equal(r.screen.recommended, 1.0);
+    assert.deepEqual([r.screen.width, r.screen.height], [1512, 982]);
     assert.equal(r.site.manageable, true);
     assert.equal(r.site.host, 'news.ycombinator.com');
     assert.equal(r.site.delta, 1);
-    assert.equal(r.site.expected, 1.5);
+    assert.equal(r.site.inherited, true);
+    assert.equal(r.site.source, EXT);
+    assert.equal(r.site.sourceName, 'LG UltraFine');
+    assert.equal(r.site.expected, 1.1);
     assert.equal(r.screens.length, 2);
     assert.equal(r.screens[0].current, true);
-    assert.equal(r.exceptionCount, 1);
+    assert.deepEqual(r.screens.map((s) => s.recommended), [1.0, 1.25]);
+    assert.equal(r.exceptionCount, 1, 'hosts with rows');
+
+    // On the external screen it is the explicit row.
+    res = await send({ type: MSG.GET_POPUP_STATE, tabId: 22, windowId: 2 });
+    r = res.result;
+    assert.equal(r.screen.key, EXT);
+    assert.equal(r.screen.recommended, 1.25);
+    assert.equal(r.site.inherited, false);
+    assert.equal(r.site.source, EXT);
+    assert.equal(r.site.expected, 1.5);
+  });
+
+  test('GET_POPUP_STATE: recommended reflects learned overrides and disconnected profiles use their stored size', async () => {
+    const local = onboardedLocal({ learnedDefaults: { '2560x1440': 1.5 } });
+    local.screens['ext:office'] = { key: 'ext:office', name: 'Office', isInternal: false, width: 3840, height: 2160, zoomFactor: 1.25, lastSeenDisplayId: 'gone', createdAt: 5 };
+    installChromeMock({ displays: [DISPLAY_INTERNAL, DISPLAY_EXTERNAL], local, windows: [windowOn(DISPLAY_EXTERNAL, 2)], tabs: [{ id: 22, windowId: 2, url: 'https://example.com/', active: true }] });
+    const { result: r } = await send({ type: MSG.GET_POPUP_STATE, tabId: 22, windowId: 2 });
+    assert.equal(r.screen.recommended, 1.5, 'learned override for 2560×1440');
+    const office = r.screens.find((s) => s.key === 'ext:office');
+    assert.equal(office.connected, false);
+    assert.equal(office.recommended, 1.5, '3840×2160 from the stored size');
   });
 
   test('GET_POPUP_STATE on a restricted page reports the site as unmanageable', async () => {
@@ -117,60 +167,140 @@ describe('message-router', () => {
     assert.equal(res.result.site.manageable, false);
   });
 
-  test('SET_ENABLED / SET_SCREEN_ZOOM / SET_EXCLUDED / CLEAR_SITE_DELTA / CLEAR_SITE_EXCEPTIONS / RELEASE_ALL', async () => {
+  test('SET_SCREEN_ZOOM / SET_EXCLUDED / CLEAR_SITE_EXCEPTIONS through the router', async () => {
     const mock = installChromeMock({
       displays: [DISPLAY_INTERNAL, DISPLAY_EXTERNAL],
-      local: onboardedLocal({ siteStepDeltas: { 'example.com': 1 } }),
+      local: onboardedLocal({ siteStepDeltas: { 'example.com': deltaRows({ [EXT]: 1 }) } }),
       windows: [windowOn(DISPLAY_EXTERNAL, 2)],
       tabs: [{ id: 22, windowId: 2, url: 'https://example.com/', active: true }],
     });
 
-    let res = await send({ type: MSG.SET_SCREEN_ZOOM, key: 'ext:lg-ultrafine', factor: 1.5 });
+    let res = await send({ type: MSG.SET_SCREEN_ZOOM, key: EXT, factor: 1.5 });
     assert.equal(res.ok, true);
+    assert.equal(res.result.learned, true);
     await sleep(40);
     assert.equal(mock.zoomOf(22), 1.75, '150% screen + 1 step');
-
-    res = await send({ type: MSG.CLEAR_SITE_DELTA, host: 'example.com' });
-    assert.equal(res.ok, true);
-    assert.equal(mock.zoomOf(22), 1.5);
+    assert.deepEqual((await storage.getState()).learnedDefaults, { '2560x1440': 1.5 });
 
     res = await send({ type: MSG.SET_EXCLUDED, host: 'example.com', excluded: true });
     assert.equal(res.ok, true);
     assert.equal(mock.scopeOf(22), 'per-origin');
+    assert.deepEqual((await storage.getState()).siteStepDeltas, {}, 'excluding forgets the host\'s rows');
     res = await send({ type: MSG.SET_EXCLUDED, host: 'example.com', excluded: false });
     assert.equal(mock.scopeOf(22), 'per-tab');
+    assert.equal(mock.zoomOf(22), 1.5, 'back at the screen default (no row left)');
 
-    res = await send({ type: MSG.SET_ENABLED, enabled: false });
-    assert.equal(res.result.enabled, false);
-    assert.equal(mock.scopeOf(22), 'per-origin');
-    res = await send({ type: MSG.SET_ENABLED, enabled: true });
-    assert.equal(mock.scopeOf(22), 'per-tab');
-
-    await storage.setSiteStepDelta('example.com', 2);
+    await storage.setSiteStepDelta('example.com', EXT, 2);
+    await storage.setSiteStepDelta('other.example', INT, -1);
     res = await send({ type: MSG.CLEAR_SITE_EXCEPTIONS });
     assert.equal(res.ok, true);
     assert.deepEqual((await storage.getState()).siteStepDeltas, {});
-
-    res = await send({ type: MSG.RELEASE_ALL });
-    assert.equal(res.ok, true);
-    assert.equal((await storage.getState()).enabled, false);
-    assert.equal(mock.scopeOf(22), 'per-origin');
-    assert.equal(mock.hostZoom.size, 0);
+    assert.equal(mock.zoomOf(22), 1.5);
   });
 
-  test('OPEN_ONBOARDING falls back to the primary display when no normal window exists', async () => {
-    const mock = installChromeMock({ displays: [DISPLAY_INTERNAL, DISPLAY_EXTERNAL], local: onboardedLocal(), windows: [] });
-    const a = await send({ type: MSG.OPEN_ONBOARDING });
-    assert.equal(a.ok, true);
-    const { left } = mock.callsTo('windows.create')[0].args[0];
-    const wa = DISPLAY_INTERNAL.workArea;
-    assert.ok(left >= wa.left && left < wa.left + wa.width, 'opened on the primary (built-in) display');
+  test('SET_ENABLED false freezes (zero release calls); SET_ENABLED true re-applies every tab', async () => {
+    const mock = installChromeMock({
+      displays: [DISPLAY_INTERNAL, DISPLAY_EXTERNAL],
+      local: onboardedLocal(),
+      windows: [windowOn(DISPLAY_EXTERNAL, 2)],
+      tabs: [
+        { id: 22, windowId: 2, url: 'https://example.com/', active: true },
+        { id: 23, windowId: 2, url: 'https://example.org/', active: false },
+      ],
+    });
+    await send({ type: MSG.SET_SCREEN_ZOOM, key: EXT, factor: 1.25 });
+    await sleep(40);
+    assert.equal(mock.scopeOf(23), 'per-tab');
+    mock.resetCalls();
+
+    let res = await send({ type: MSG.SET_ENABLED, enabled: false });
+    assert.equal(res.result.enabled, false);
+    assert.equal(mock.callsTo('tabs.setZoomSettings').length, 0);
+    assert.equal(mock.callsTo('tabs.setZoom').length, 0);
+    assert.equal(mock.scopeOf(22), 'per-tab');
+    assert.equal(mock.scopeOf(23), 'per-tab');
+    assert.ok(mock.callsTo('action.setBadgeText').some((c) => c.args[0].tabId === 22 && c.args[0].text === 'OFF'));
+
+    await mock.userZoom(23, 0.8); // drift while paused
+    res = await send({ type: MSG.SET_ENABLED, enabled: true });
+    assert.equal(res.result.enabled, true);
+    assert.equal(mock.zoomOf(23), 1.25, 'background tab re-applied immediately');
+    assert.equal(mock.zoomOf(22), 1.25);
+  });
+
+  test('REGRESSION A2: RELEASE_ALL releases every managed tab (≥1 setZoomSettings per-origin) and pauses', async () => {
+    const mock = installChromeMock({
+      displays: [DISPLAY_INTERNAL, DISPLAY_EXTERNAL],
+      local: onboardedLocal(),
+      windows: [windowOn(DISPLAY_EXTERNAL, 2), windowOn(DISPLAY_INTERNAL, 1)],
+      tabs: [
+        { id: 22, windowId: 2, url: 'https://example.com/', active: true },
+        { id: 23, windowId: 2, url: 'https://example.org/', active: false },
+        { id: 11, windowId: 1, url: 'https://example.net/', active: true },
+      ],
+    });
+    await send({ type: MSG.SET_ENABLED, enabled: true }); // manages every tab on both screens
+    for (const id of [22, 23, 11]) assert.equal(mock.scopeOf(id), 'per-tab');
+    mock.resetCalls();
+
+    const res = await send({ type: MSG.RELEASE_ALL });
+    assert.equal(res.ok, true);
+    assert.equal(res.result.enabled, false);
+    assert.equal(res.result.released, 3);
+    const releases = mock.callsTo('tabs.setZoomSettings').filter((c) => c.args[1].scope === 'per-origin');
+    assert.ok(releases.length >= 1, 'at least one per-origin setZoomSettings');
+    assert.deepEqual(releases.map((c) => c.args[0]).sort(), [11, 22, 23]);
+    for (const id of [22, 23, 11]) {
+      assert.equal(mock.scopeOf(id), 'per-origin');
+      assert.equal(mock.zoomOf(id), 1.0);
+    }
+    assert.equal((await storage.getState()).enabled, false);
+    assert.equal(mock.hostZoom.size, 0, 'Chrome\'s per-origin memory never written');
+  });
+
+  test('RENAME_SCREEN trims / caps / reverts on empty; unknown key → ok:false; badge title refreshed on that screen', async () => {
+    const mock = installChromeMock({
+      displays: [DISPLAY_INTERNAL, DISPLAY_EXTERNAL],
+      local: onboardedLocal(),
+      windows: [windowOn(DISPLAY_EXTERNAL, 2)],
+      tabs: [{ id: 22, windowId: 2, url: 'https://example.com/', active: true }],
+    });
+    await send({ type: MSG.GET_POPUP_STATE, tabId: 22, windowId: 2 }); // resolves window 2 → EXT
+    mock.resetCalls();
+
+    let res = await send({ type: MSG.RENAME_SCREEN, key: EXT, name: '  Desk\n Monitor ' });
+    assert.equal(res.ok, true);
+    assert.equal(res.result.name, 'Desk Monitor');
+    assert.equal((await storage.getState()).screens[EXT].name, 'Desk Monitor');
+    assert.match(mock.callsTo('action.setTitle').at(-1).args[0].title, /^AutoZoom · Desk Monitor · 125%/);
+
+    res = await send({ type: MSG.RENAME_SCREEN, key: EXT, name: 'x'.repeat(60) });
+    assert.equal(res.result.name.length, 40);
+
+    res = await send({ type: MSG.RENAME_SCREEN, key: EXT, name: '   ' });
+    assert.equal(res.result.name, 'External Display', 'empty reverts to the auto name');
+
+    res = await send({ type: MSG.RENAME_SCREEN, key: 'ext:nope', name: 'X' });
+    assert.equal(res.ok, false);
+    assert.match(res.error, /Unknown screen key/);
+    assert.equal(mock.callsTo('tabs.setZoom').length, 0, 'renaming never zooms');
+  });
+
+  test('removed v2 messages (GET_SETUP_DATA, DISMISS_SETUP, OPEN_ONBOARDING, CLEAR_SITE_DELTA) return "Unknown message type"', async () => {
+    const mock = installChromeMock({ displays: [DISPLAY_INTERNAL, DISPLAY_EXTERNAL], local: onboardedLocal(), windows: [windowOn(DISPLAY_EXTERNAL, 2)] });
+    for (const type of ['GET_SETUP_DATA', 'DISMISS_SETUP', 'OPEN_ONBOARDING', 'CLEAR_SITE_DELTA', 'NOPE', undefined]) {
+      const res = await send({ type, mode: 'onboarding', host: 'example.com' });
+      assert.equal(res.ok, false, String(type));
+      assert.match(res.error, /^Unknown message type: /);
+    }
+    assert.equal(mock.callsTo('windows.create').length, 0);
+    assert.ok(!(MSG.GET_SETUP_DATA || MSG.OPEN_ONBOARDING || MSG.CLEAR_SITE_DELTA || MSG.DISMISS_SETUP), 'no constants left for them');
   });
 
   test('GET_POPUP_STATE tolerates a saved screen profile without a name', async () => {
     const local = onboardedLocal();
-    local.screens['ext:2560x1440'] = { key: 'ext:2560x1440', isInternal: false, zoomFactor: 1.25, confirmed: true };
-    local.screens['ext:zzz'] = { key: 'ext:zzz', name: undefined, isInternal: false, zoomFactor: 1.1, confirmed: true };
+    local.screens['ext:2560x1440'] = { key: 'ext:2560x1440', isInternal: false, zoomFactor: 1.25 };
+    local.screens['ext:zzz'] = { key: 'ext:zzz', name: undefined, isInternal: false, zoomFactor: 1.1 };
     installChromeMock({
       displays: [DISPLAY_INTERNAL, DISPLAY_EXTERNAL],
       local,
@@ -180,7 +310,8 @@ describe('message-router', () => {
     const res = await send({ type: MSG.GET_POPUP_STATE, tabId: 22, windowId: 2 });
     assert.equal(res.ok, true, res.error);
     assert.equal(res.result.screens.length, 4);
-    assert.equal(res.result.screens[0].key, 'ext:lg-ultrafine', 'current screen first');
+    assert.equal(res.result.screens[0].key, EXT, 'current screen first');
+    assert.equal(res.result.screens.find((s) => s.key === 'ext:zzz').recommended, 1.25, 'size-less external → fallback, never 100%');
   });
 
   test('SET_SCREEN_ZOOM with an unknown key fails cleanly (ok:false) and writes nothing', async () => {
@@ -189,37 +320,6 @@ describe('message-router', () => {
     assert.equal(res.ok, false);
     assert.match(res.error, /Unknown screen key/);
     assert.ok(!('ext:does-not-exist' in (await storage.getState()).screens));
-  });
-
-  test('OPEN_ONBOARDING opens exactly one setup window (even when requested concurrently) on the display of the last-focused normal window', async () => {
-    // Chrome's window is on the external display; primary is the built-in one.
-    const mock = installChromeMock({
-      displays: [DISPLAY_INTERNAL, DISPLAY_EXTERNAL],
-      local: onboardedLocal(),
-      windows: [windowOn(DISPLAY_INTERNAL, 1), windowOn(DISPLAY_EXTERNAL, 2, { focused: true })],
-    });
-    const [a, b, c] = await Promise.all([
-      send({ type: MSG.OPEN_ONBOARDING }),
-      send({ type: MSG.OPEN_ONBOARDING }),
-      send({ type: MSG.OPEN_ONBOARDING }),
-    ]);
-    assert.equal(a.ok, true);
-    assert.equal(a.result.windowId, b.result.windowId);
-    assert.equal(a.result.windowId, c.result.windowId);
-    const creates = mock.callsTo('windows.create');
-    assert.equal(creates.length, 1);
-    assert.match(creates[0].args[0].url, /mode=onboarding/);
-    const wa = DISPLAY_EXTERNAL.workArea;
-    const { left, top, width, height } = creates[0].args[0];
-    assert.ok(left >= wa.left && left + width <= wa.left + wa.width, `left=${left} not on the external display`);
-    assert.ok(top >= wa.top && top + height <= wa.top + wa.height, `top=${top} not on the external display`);
-
-    const again = await send({ type: MSG.OPEN_ONBOARDING });
-    assert.equal(again.result.windowId, a.result.windowId);
-    assert.equal(mock.callsTo('windows.create').length, 1);
-
-    const bad = await send({ type: 'NOPE' });
-    assert.equal(bad.ok, false);
-    assert.match(bad.error, /Unknown message type/);
+    assert.deepEqual((await storage.getState()).learnedDefaults, {});
   });
 });
