@@ -1,6 +1,6 @@
 # Chrome Web Store Listing — AutoZoom — Per-Monitor Automatic Zoom
 
-> Last Updated: 2026-10-02
+> Last Updated: 2026-10-03
 
 ## Store Listing
 
@@ -14,21 +14,21 @@ Automatically switches page zoom between your laptop screen and external monitor
 
 AutoZoom gives every screen its own default page zoom and switches between them automatically, so web pages are comfortably readable on your MacBook and on your external monitor without pressing Cmd + and Cmd − all day.
 
-Each display you use gets a saved default zoom: 100% on the built-in display and 125% on external monitors to start with, and you can pick any value on Chrome's zoom scale (25%–500%) per screen. When you drag a Chrome window to another screen, plug a monitor in, unplug it, or switch to a window on a different display, the page you are looking at is set to that screen's zoom right away. Background tabs are updated the moment you switch to them, so even windows with 100+ tabs stay fast.
+Each display you use gets a saved default zoom. The built-in display starts at 100%; each external monitor starts from a recommendation based on its resolution — 125% for most 27-inch and ultrawide monitors, 110% for a 2560×1080 ultrawide, 150% for an unscaled 4K display, 100% for a 1080p one — and you can pick any value on Chrome's zoom scale (25%–500%) per screen. When you drag a Chrome window to another screen, plug a monitor in, unplug it, or switch to a window on a different display, the page you are looking at is set to that screen's zoom right away. Background tabs are updated the moment you switch to them, so even windows with 100+ tabs stay fast.
 
-Per-site adjustments are relative, not absolute. If you press Cmd + once on a site with tiny text while you are on your 125% monitor, AutoZoom remembers "+1 step" for that site and gives it one step above the default on every screen — 150% on the monitor, 110% on the laptop. Press Cmd − to undo it, or reset the site from the toolbar popup. Sites you want left alone (design tools, dashboards) can be excluded with one click; Chrome then handles their zoom exactly as if AutoZoom weren't installed.
+Per-site adjustments are relative, not absolute, and they are remembered per screen. If you press Cmd + once on a site with tiny text while you are on your 125% monitor, AutoZoom remembers "+1 step" for that site there and carries the same step over to your other screens — 150% on the monitor, 110% on the laptop — until you adjust the site on one of them, after which that screen keeps its own setting for the site. Press Cmd − to undo a step on the screen you're on. Sites you want left alone (design tools, dashboards) can be excluded with one click; Chrome then handles their zoom exactly as if AutoZoom weren't installed.
 
 How to use it:
-1. Install AutoZoom. A short setup window lists every connected display with a suggested zoom. Adjust if you like and click Apply.
+1. Install AutoZoom. The toolbar popup opens with every connected display and its recommended zoom. Adjust if you like and click "Accept and start". Nothing is changed until you do. (If the popup doesn't appear on its own, click the AutoZoom icon in the toolbar.)
 2. That's it. Move windows between screens and watch pages re-zoom. The toolbar badge shows the zoom in effect for the current tab.
-3. Click the toolbar icon anytime to change a screen's default, reset or exclude the current site, edit saved screens, or pause AutoZoom.
-4. When you connect a monitor AutoZoom hasn't seen before, a compact prompt appears on that monitor so you can confirm its zoom. Displays are shown by the name macOS reports; when macOS doesn't provide one (common), they are labelled by resolution, e.g. "External Display · 2560×1440".
+3. Click the toolbar icon anytime to change a screen's default, rename a screen, exclude the current site, edit saved screens, or pause AutoZoom.
+4. When you connect a monitor AutoZoom hasn't seen before, it gets the recommended zoom for its resolution right away — no prompt — and you can change it from the popup. Screens are shown as "MacBook Screen" and "External Display" (or the name macOS reports) with their resolution underneath; rename any screen to tell identical monitors apart.
 
-Pause or uninstall at any time — your original Chrome zoom settings are untouched. AutoZoom applies zoom to each tab individually and never rewrites Chrome's own per-site zoom memory, so switching it off hands every tab straight back to Chrome.
+Pause at any time — your tabs keep the zoom they have. Use "Restore Chrome's zoom" to hand everything back to Chrome. AutoZoom applies zoom to each tab individually and never rewrites Chrome's own per-site zoom memory, so restoring or uninstalling leaves your original Chrome zoom settings exactly as they were.
 
 Privacy: AutoZoom works entirely on your computer. It does not read page content, does not collect browsing history, and sends nothing anywhere. Chrome shows the "Read your browsing history" notice at install because AutoZoom needs to know each tab's website address to apply per-site zoom; that information never leaves your device. See the privacy policy for details.
 
-Designed for macOS laptops with one or more external displays. Requires Chrome 102 or newer.
+Designed for macOS laptops with one or more external displays. Requires Chrome 127 or newer.
 
 Support: open an issue on the project repository or email the address on this listing.
 
@@ -46,29 +46,31 @@ English
 | Asset | Dimensions | Status | Filename |
 |-------|-----------|--------|----------|
 | Store Icon [REQUIRED] | 128×128 PNG | ✅ Ready | `icons/icon-128.png` (generated by `scripts/generate-icons.py`) |
-| Screenshot 1 [REQUIRED] | 1280×800 or 640×400 | ⬜ Not created | `store-assets/screenshot-1-popup.png` |
-| Screenshot 2 [RECOMMENDED] | 1280×800 or 640×400 | ⬜ Not created | `store-assets/screenshot-2-onboarding.png` |
+| Screenshot 1 [REQUIRED] | 1280×800 or 640×400 | 🟡 Retake for 1.1.0 (two-line screen card) | `store-assets/screenshot-1-popup.png` |
+| Screenshot 2 [RECOMMENDED] | 1280×800 or 640×400 | ⬜ Not created (spec changed for 1.1.0: first-run popup, not a window) | `store-assets/screenshot-2-first-run.png` |
 | Screenshot 3 [RECOMMENDED] | 1280×800 or 640×400 | ⬜ Not created | `store-assets/screenshot-3-two-screens.png` |
-| Screenshot 4 | 1280×800 or 640×400 | ⬜ Not created | `store-assets/screenshot-4-site-exception.png` |
+| Screenshot 4 | 1280×800 or 640×400 | ⬜ Not created (spec changed for 1.1.0: no Reset button, inherited label) | `store-assets/screenshot-4-site-exception.png` |
 | Screenshot 5 | 1280×800 or 640×400 | ⬜ Not created | |
 | Small Promo Tile [RECOMMENDED] | 440×280 | ⬜ Not created | `store-assets/promo-small.png` |
 | Marquee Promo Tile | 1400×560 | ⬜ Not created | |
 
 ### Screenshot Notes
-1. **Popup over a page on an external monitor** — toolbar popup open showing "Current screen: External Display · 2560×1440 · 125%" (or the monitor's name when macOS reports one), the current site card, and the Saved screens accordion. Badge shows `125`.
-2. **Onboarding window** — the first-run setup window listing "Built-in Display · 100%" and "External Display · 2560×1440 · 125%" with the single Apply button. (On macOS Chrome usually reports empty display names, so do not promise model names in screenshots.)
+1. **Popup over a page on an external monitor** — toolbar popup open showing the **two-line Current Screen card** — "External Display" (editable name) over "2560×1440 · 125% recommended" (or the monitor's name when macOS reports one) — the current site card, and the Saved screens accordion. Badge shows `125`. **Retake for 1.1.0**: the 1.0.0 single-line card is gone.
+2. **First-run popup** — the toolbar popup in its first-run state listing "MacBook Screen / 1728×1117 · 100%" and "External Display / 2560×1440 · 125% recommended" with the single "Accept and start" button and the pin tip. (On macOS Chrome usually reports empty display names, so do not promise model names in screenshots.)
 3. **Same site, two screens** — a split capture of the same page in a window on the laptop (100%) and a window on the monitor (125%), demonstrating per-window independence.
-4. **Site exception** — popup showing a site at "+1 step" with the Reset button, and the Exclude checkbox.
+4. **Site exception** — popup showing a site at "+1 step on this screen → 150%" on the monitor, or "+1 step · inherited from External Display → 110%" on the laptop, and the Exclude checkbox. (There is no Reset button in 1.1.0.)
 
-Screenshots must be re-taken whenever popup/setup UI changes. Take them in light mode at 2× and downscale to 1280×800.
+Screenshots must be re-taken whenever the popup UI changes. Take them in light mode at 2× and downscale to 1280×800.
 
 ## Permissions Justification
 
+> **1.1.0:** the permission set is unchanged from 1.0.0 (`system.display`, `tabs`, `storage`; no host permissions). No new justifications are needed; the only manifest changes are the version and `minimum_chrome_version` 102 → 127.
+
 | Permission | Type | Justification |
 |------------|------|---------------|
-| `system.display` | permissions | Used to list the connected displays (name when the OS provides one, whether it is the built-in screen, its size and its position on the desktop) so AutoZoom can tell which screen each Chrome window is on and remember a default zoom per display. Nothing about the displays is stored except a label (name or resolution), a built-in/external flag and the display's identifier, all kept locally. |
+| `system.display` | permissions | Used to list the connected displays (name when the OS provides one, whether it is the built-in screen, its size and its position on the desktop) so AutoZoom can tell which screen each Chrome window is on, suggest a starting zoom from the screen's resolution, and remember a default zoom per display. Nothing about the displays is stored except a label (the name the OS reports or one the user types), a built-in/external flag, the logical size and the display's identifier, all kept locally. |
 | `tabs` | permissions | Used to (1) read each tab's URL so the correct per-site zoom adjustment or exclusion can be applied, (2) know which tab is active in each window so only visible tabs are updated immediately, and (3) call Chrome's tab zoom functions (`getZoom`/`setZoom` and the per-tab zoom scope) to apply the screen's zoom. Page content is never read; URLs are only used in-memory to look up the site's hostname and are never stored or transmitted. |
-| `storage` | permissions | Used to save the user's settings on their own device: the default zoom chosen for each screen, relative per-site zoom adjustments (hostname → step count), the list of excluded sites, and the on/off state. Session storage holds a small per-window cache that is cleared when Chrome quits. No data is synced or sent anywhere. |
+| `storage` | permissions | Used to save the user's settings on their own device: the default zoom and name chosen for each screen, relative per-site zoom adjustments (hostname → step count per screen), recommended-zoom corrections the user made per monitor resolution, the list of excluded sites, and the on/off state. Session storage holds a small per-window cache that is cleared when Chrome quits. No data is synced or sent anywhere. |
 
 **No host permissions.** AutoZoom declares no `host_permissions`, no `content_scripts`, no `<all_urls>`, and injects nothing into web pages.
 
@@ -129,19 +131,27 @@ Project repository
 |---------|------|---------|--------|
 | 1.0.0 | 2026-10-02 | Initial release: per-display default zoom (100% built-in / 125% external), one-window onboarding listing every connected display, compact prompt for newly connected monitors, lazy per-tab sync for 100+ tabs, relative per-site Cmd +/− exceptions, per-site exclusions, Pause / "Clear all site exceptions" / "Restore Chrome's zoom", toolbar badge. `minimum_chrome_version` 102. | Draft |
 | 1.0.0 (fix round 1, unreleased) | 2026-10-02 | Audit + live-hardware fixes: single-flight setup window (no duplicate prompts under concurrent syncs); all storage writes serialized (no lost Cmd+/− or popup changes); onboarding opens on the display of the focused Chrome window; nameless macOS displays keyed by resolution (`ext:2560x1440`) and labelled accordingly; `setScreenZoom` rejects unknown keys; per-tab single-flight prevents duplicate setZoom; `dist/unpacked/` for Load unpacked. No manifest/permission changes. | Draft |
+| 1.1.0 | 2026-10-03 | Setup now happens in the toolbar popup; new monitors get a recommended zoom automatically; per-screen site adjustments; renameable screens; Pause keeps your current zoom. Manifest: `minimum_chrome_version` 102 → 127; permissions unchanged (no new justifications needed). Settings from 1.0.0 are migrated in place. Popup screenshot must be retaken (two-line screen card). | Draft |
 
 ## Review Notes
 
 ### Known Issues / Limitations
 - **Install warning**: the `tabs` permission triggers "Read your browsing history". Explained in the listing (see Permissions Justification).
 - **Restricted pages**: Chrome does not allow extensions to zoom `chrome://`, `chrome-extension://`, `devtools://`, `about:` pages or the Chrome Web Store. AutoZoom skips them and the popup says so.
-- **First frame after navigation**: because AutoZoom zooms tabs individually (so Pause and uninstall are fully reversible), Chrome loads each new page at its own zoom for one frame before AutoZoom re-applies the screen zoom.
+- **First frame after navigation**: because AutoZoom zooms tabs individually (so "Restore Chrome's zoom" and uninstall are fully reversible), Chrome loads each new page at its own zoom for one frame before AutoZoom re-applies the screen zoom.
 - **Chrome's "Page zoom" setting**: screen defaults are absolute zoom values on Chrome's scale; Chrome's global *Settings → Appearance → Page zoom* is not read.
-- **Per-site rules are per hostname** (e.g. `docs.google.com`), not per path.
+- **Per-site rules are per hostname** (e.g. `docs.google.com`), not per path. Since 1.1.0 an adjustment is stored per screen; screens without their own adjustment inherit the closest screen's, and a site adjusted back to the screen default on one screen stays at the default there (an explicit 0). There is no per-site reset button: exclude the site (clears it on every screen) or use "Clear all site exceptions".
+- **Recommended zoom is by logical resolution only**: Chrome reports no physical size, so a 27" and a 32" 1440p monitor get the same recommendation (125%). The user corrects it in the popup; corrections to external screens are remembered for future monitors of the same resolution.
 - **macOS focus**: display detection relies on Chrome's display API; it works on other platforms but the defaults and wording target MacBooks with external monitors.
-- **Display names on macOS are often empty**: Chrome's display API frequently reports `name: ""`. Nameless external displays are keyed and labelled by resolution ("External Display · 2560×1440"). Two *identical* monitors (same name or same resolution with no name) are distinguished by display-id order and may swap profiles if macOS re-numbers them on reconnect.
+- **Display names on macOS are often empty**: Chrome's display API frequently reports `name: ""`. Nameless external displays are keyed by resolution and shown as "External Display" (then "External Display 2", …) with the resolution on the card's second line; any screen can be renamed in the popup. Two *identical* monitors (same name or same resolution with no name) are distinguished by display-id order and may swap profiles if macOS re-numbers them on reconnect. Because new screens are applied immediately with no prompt (1.1.0), a nameless monitor whose macOS "Looks like" scaling changes after a reconnect may be treated as a new screen and get the recommended zoom for its new resolution.
 - **Load unpacked** must use `dist/unpacked/` (built by `scripts/package-extension.sh`); the repository root contains a `_`-prefixed folder that Chrome rejects.
-- **Reversibility**: AutoZoom never writes Chrome's per-origin zoom memory. Pause, Exclude and uninstall return tabs to Chrome's own zoom.
+- **Reversibility**: AutoZoom never writes Chrome's per-origin zoom memory. Exclude, "Restore Chrome's zoom" and uninstall return tabs to Chrome's own zoom. **Pause (1.1.0) freezes** tabs at their current zoom instead of releasing them; a paused tab follows Chrome's zoom again on its next navigation, and Resume re-applies AutoZoom's values everywhere.
+- **First-run popup may not open by itself**: Chrome can refuse to open the popup right at install (its own "extension added" bubble, no focused window). AutoZoom retries once on the next window focus and otherwise waits for the user to click the icon; nothing is zoomed until the user accepts, so there is no surprise.
+
+### Compatibility
+- **Minimum Chrome: 127** (1.1.0; was 102 in 1.0.0). Required so the first-run popup can open by itself right after install; everything else works on 102+. This is a one-way publishing decision: the Web Store will not offer 1.1.0 to profiles below 127 — they stay on 1.0.0.
+- Permissions are unchanged across 1.0.0 → 1.1.0 (`system.display`, `tabs`, `storage`; no host permissions), so the update installs without a new permission prompt.
+- macOS is the target platform; other platforms work but the recommendations and wording target MacBooks with external monitors.
 
 ### Packaging
 `sh scripts/package-extension.sh` → `dist/unpacked/` (loadable folder) **and** `dist/autozoom-v<version>.zip` (store upload), both containing only `manifest.json`, `icons/`, `src/`. Tests, scripts, docs (including this file), `package.json`, dotfiles and `_`-prefixed folders are excluded.
