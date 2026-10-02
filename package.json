@@ -1,6 +1,6 @@
 {
   "name": "autozoom-extension",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "AutoZoom — per-monitor automatic zoom for Chrome (MV3). Zero runtime dependencies; this file only enables ES modules for `node --test`.",
   "type": "module",
