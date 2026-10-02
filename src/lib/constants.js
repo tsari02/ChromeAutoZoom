@@ -13,14 +13,36 @@ export const STEP_100 = 7;
 /** Tolerance used only for equality checks between zoom factors. */
 export const ZOOM_EPSILON = 0.005;
 
-/** Default zoom per display class (engineering doc §4). */
-export const DEFAULT_ZOOMS = Object.freeze({ internal: 1.0, external: 1.25 });
+/**
+ * Logical resolution → recommended zoom (engineering doc v3 §4).
+ * Internal panels are always 100%; externals use an exact-size table, one
+ * "small monitor" rule (≤ 1920×1200 → 100%) and a 125% fallback.
+ */
+export const RECOMMENDED_ZOOM = Object.freeze({
+  internal: 1.0,
+  bySize: Object.freeze({
+    '2560x1080': 1.1,
+    '3840x2160': 1.5,
+    '5120x2880': 2.0,
+  }),
+  smallExternalMax: Object.freeze({ width: 1920, height: 1200 }),
+  externalFallback: 1.25,
+});
 
-/** storage.local schema version (engineering doc §4). */
-export const SCHEMA_VERSION = 2;
+/** storage.local schema version (engineering doc v3 §3). */
+export const SCHEMA_VERSION = 2; // → 3 in step 2 together with storage.js
 
 /** Stable key for the built-in display profile. */
 export const INTERNAL_KEY = 'internal';
+
+/** Default (auto) screen names (doc v3 §5.1). */
+export const DEFAULT_SCREEN_NAMES = Object.freeze({
+  internal: 'MacBook Screen',
+  external: 'External Display',
+});
+
+/** Max length of a user-entered screen name (doc v3 §5.3 renameScreen). */
+export const SCREEN_NAME_MAX_LENGTH = 40;
 
 /** Timings (engineering doc §6). */
 export const TIMINGS = Object.freeze({
@@ -31,14 +53,6 @@ export const TIMINGS = Object.freeze({
 
 /** Max concurrent applyZoom calls during normalizeScreen (doc §5.6). */
 export const NORMALIZE_CONCURRENCY = 8;
-
-/** Setup window geometry (doc §7). */
-export const SETUP_WINDOW = Object.freeze({
-  width: 420,
-  baseHeight: 180,
-  rowHeight: 64,
-  maxHeight: 720,
-});
 
 /** Badge appearance (doc §5.8). */
 export const BADGE = Object.freeze({
@@ -56,23 +70,24 @@ export const WEBSTORE_HOSTS = Object.freeze([
   'chromewebstore.google.com',
 ]);
 
-/** Message types shared by the SW, popup and setup page (doc §7/§8). */
+/** Message types shared by the SW and the popup (doc v3 §8). */
 export const MSG = Object.freeze({
-  GET_SETUP_DATA: 'GET_SETUP_DATA',
-  CONFIRM_SETUP: 'CONFIRM_SETUP',
-  DISMISS_SETUP: 'DISMISS_SETUP',
   GET_POPUP_STATE: 'GET_POPUP_STATE',
+  CONFIRM_SETUP: 'CONFIRM_SETUP',
   SET_ENABLED: 'SET_ENABLED',
   SET_SCREEN_ZOOM: 'SET_SCREEN_ZOOM',
+  RENAME_SCREEN: 'RENAME_SCREEN',
   SET_EXCLUDED: 'SET_EXCLUDED',
-  CLEAR_SITE_DELTA: 'CLEAR_SITE_DELTA',
   CLEAR_SITE_EXCEPTIONS: 'CLEAR_SITE_EXCEPTIONS',
   RELEASE_ALL: 'RELEASE_ALL',
+  // --- v2 leftovers, deleted in step 3 together with the setup window -----
+  GET_SETUP_DATA: 'GET_SETUP_DATA',
+  DISMISS_SETUP: 'DISMISS_SETUP',
+  CLEAR_SITE_DELTA: 'CLEAR_SITE_DELTA',
   OPEN_ONBOARDING: 'OPEN_ONBOARDING',
 });
 
-/** Setup page modes (doc §7). */
-export const SETUP_MODE = Object.freeze({
-  ONBOARDING: 'onboarding',
-  NEW_DISPLAY: 'new-display',
-});
+// --- v2 leftovers, deleted in step 3 together with the setup window ---------
+export const DEFAULT_ZOOMS = Object.freeze({ internal: 1.0, external: 1.25 });
+export const SETUP_WINDOW = Object.freeze({ width: 420, baseHeight: 180, rowHeight: 64, maxHeight: 720 });
+export const SETUP_MODE = Object.freeze({ ONBOARDING: 'onboarding', NEW_DISPLAY: 'new-display' });

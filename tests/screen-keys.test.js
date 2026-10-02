@@ -9,8 +9,18 @@ import {
   isInternalDisplay,
   displayLabel,
   newScreenProfile,
+  dimensionsOf,
+  defaultScreenName,
+  profileRefreshPatch,
 } from '../src/lib/screen-keys.js';
-import { DISPLAY_INTERNAL, DISPLAY_EXTERNAL, DISPLAY_EXTERNAL_2, onboardedLocal } from './_chrome-mock.js';
+import {
+  DISPLAY_INTERNAL,
+  DISPLAY_EXTERNAL,
+  DISPLAY_EXTERNAL_2,
+  DISPLAY_EXTERNAL_4K,
+  DISPLAY_NAMELESS_QHD,
+  onboardedLocal,
+} from './_chrome-mock.js';
 
 describe('screen-keys', () => {
   test('slug normalizes names', () => {
@@ -129,5 +139,70 @@ describe('screen-keys', () => {
       confirmed: false,
       lastSeenDisplayId: DISPLAY_EXTERNAL.id,
     });
+  });
+
+  test('dimensionsOf reads `bounds` on a raw display and top-level width/height on a stored profile', () => {
+    assert.deepEqual(dimensionsOf(DISPLAY_EXTERNAL), { width: 2560, height: 1440 });
+    assert.deepEqual(dimensionsOf(DISPLAY_EXTERNAL_4K), { width: 3840, height: 2160 });
+    assert.deepEqual(dimensionsOf({ key: 'ext:x', width: 2560, height: 1440 }), { width: 2560, height: 1440 });
+    assert.deepEqual(dimensionsOf({ width: 1727.6, height: 1116.5 }), { width: 1728, height: 1117 });
+    for (const bad of [
+      { key: 'ext:x', width: null, height: null },
+      { key: 'ext:x' },
+      { width: 0, height: 0 },
+      { width: NaN, height: 1440 },
+      { width: -1, height: 1440 },
+      { bounds: {} },
+      { bounds: null },
+      null,
+      undefined,
+      'nope',
+    ]) {
+      assert.equal(dimensionsOf(bad), null, `dimensionsOf(${JSON.stringify(bad)})`);
+    }
+    assert.equal(resolutionTag({ bounds: { width: 0, height: 1440 } }), 'unknown');
+  });
+
+  test('REGRESSION A5: defaultScreenName is profile-driven and needs no live display', () => {
+    assert.equal(defaultScreenName({ key: 'internal', isInternal: true }, {}), 'MacBook Screen');
+    assert.equal(defaultScreenName({ key: 'ext:a', isInternal: false }, {}), 'External Display');
+    // Sibling count: N = 1 + number of OTHER external profiles.
+    const one = { 'ext:a': { key: 'ext:a', isInternal: false, name: 'External Display' } };
+    assert.equal(defaultScreenName({ key: 'ext:b', isInternal: false }, one), 'External Display 2');
+    const two = { ...one, 'ext:b': { key: 'ext:b', isInternal: false, name: 'External Display 2' } };
+    assert.equal(defaultScreenName({ key: 'ext:c', isInternal: false }, two), 'External Display 3');
+    // A profile already in `screens` does not count itself (rename → empty / migration).
+    assert.equal(defaultScreenName({ key: 'ext:a', isInternal: false }, one), 'External Display');
+    assert.equal(defaultScreenName({ key: 'ext:b', isInternal: false }, two), 'External Display 2');
+    // Internal siblings never count.
+    const withInternal = { internal: { key: 'internal', isInternal: true, name: 'MacBook Screen' } };
+    assert.equal(defaultScreenName({ key: 'ext:a', isInternal: false }, withInternal), 'External Display');
+    // Never collides with a name another profile already holds.
+    const office = { 'ext:a': { key: 'ext:a', isInternal: false, name: 'External Display 2' } };
+    assert.equal(defaultScreenName({ key: 'ext:b', isInternal: false }, office), 'External Display 3');
+  });
+
+  test('defaultScreenName prefers a non-empty macOS display name when a display is given', () => {
+    assert.equal(defaultScreenName({ key: 'ext:lg', isInternal: false }, {}, DISPLAY_EXTERNAL), 'LG UltraFine');
+    assert.equal(defaultScreenName({ key: 'internal', isInternal: true }, {}, DISPLAY_INTERNAL), 'Built-in Retina Display');
+    assert.equal(defaultScreenName({ key: 'ext:x', isInternal: false }, {}, DISPLAY_NAMELESS_QHD), 'External Display');
+    assert.equal(defaultScreenName({ key: 'ext:x', isInternal: false }, {}, { ...DISPLAY_EXTERNAL, name: '   ' }), 'External Display');
+    // Class can come from the display when the profile has no flag yet.
+    assert.equal(defaultScreenName({}, {}, { ...DISPLAY_NAMELESS_QHD, name: '', isInternal: true }), 'MacBook Screen');
+  });
+
+  test('profileRefreshPatch: id and logical size, only when they differ (C2)', () => {
+    const fresh = { key: 'ext:lg-ultrafine', lastSeenDisplayId: DISPLAY_EXTERNAL.id, width: 2560, height: 1440 };
+    assert.equal(profileRefreshPatch(fresh, DISPLAY_EXTERNAL), null);
+    assert.deepEqual(profileRefreshPatch({ ...fresh, width: null, height: null }, DISPLAY_EXTERNAL), { width: 2560, height: 1440 });
+    assert.deepEqual(profileRefreshPatch({ ...fresh, width: 1920, height: 1080 }, DISPLAY_EXTERNAL), { width: 2560, height: 1440 });
+    assert.deepEqual(profileRefreshPatch({ ...fresh, lastSeenDisplayId: '555' }, DISPLAY_EXTERNAL), { lastSeenDisplayId: DISPLAY_EXTERNAL.id });
+    assert.deepEqual(profileRefreshPatch({ ...fresh, lastSeenDisplayId: '555', width: null, height: null }, DISPLAY_EXTERNAL), {
+      lastSeenDisplayId: DISPLAY_EXTERNAL.id,
+      width: 2560,
+      height: 1440,
+    });
+    // A display without a usable size never blanks a known size.
+    assert.equal(profileRefreshPatch(fresh, { ...DISPLAY_EXTERNAL, bounds: {} }), null);
   });
 });

@@ -1,5 +1,6 @@
-// PURE: stable display keys + matching against saved profiles (doc §5.2).
-import { INTERNAL_KEY } from './constants.js';
+// PURE: stable display keys + matching against saved profiles (doc §5.2),
+// plus the display-shape helpers shared by zoom-map.js / storage.js (v3 §5.1).
+import { INTERNAL_KEY, DEFAULT_SCREEN_NAMES } from './constants.js';
 
 const INTERNAL_NAME_RE = /built-in|color lcd|liquid retina/i;
 
@@ -17,12 +18,26 @@ export function slug(name) {
     .replace(/^-+|-+$/g, '');
 }
 
+/**
+ * Logical (DIP) size of either a raw `chrome.system.display` entry (size under
+ * `bounds`) or a stored screen profile (top-level `width`/`height`).
+ * Returns `{ width, height }` (rounded integers) only when BOTH are finite and
+ * > 0; otherwise `null`. Never yields NaN or 0 — `null`, `undefined`, `0` and
+ * a missing `bounds` all mean "size unknown" (pitfall A1).
+ */
+export function dimensionsOf(input) {
+  if (!input || typeof input !== 'object') return null;
+  const src = input.bounds && typeof input.bounds === 'object' ? input.bounds : input;
+  const w = Math.round(Number(src.width));
+  const h = Math.round(Number(src.height));
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return null;
+  return { width: w, height: h };
+}
+
 /** "2560x1440" from a display's DIP bounds (used only when the name is empty). */
 export function resolutionTag(display) {
-  const b = display?.bounds ?? {};
-  const w = Math.round(Number(b.width)) || 0;
-  const h = Math.round(Number(b.height)) || 0;
-  return w && h ? `${w}x${h}` : 'unknown';
+  const d = dimensionsOf(display);
+  return d ? `${d.width}x${d.height}` : 'unknown';
 }
 
 /**
@@ -102,8 +117,10 @@ export function matchSavedScreen(display, screens = {}, siblings = []) {
 }
 
 /**
- * Human-readable name for a display. macOS often reports an empty name, so
+ * Human-readable label for a display. macOS often reports an empty name, so
  * nameless externals are labelled by resolution ("External Display · 2560×1440").
+ * Since v3 this is only used for resolution text, never as the profile name
+ * (see `defaultScreenName`).
  */
 export function displayLabel(display) {
   const name = String(display?.name ?? '').trim();
@@ -111,6 +128,59 @@ export function displayLabel(display) {
   if (isInternalDisplay(display)) return 'Built-in Display';
   const tag = resolutionTag(display);
   return tag === 'unknown' ? 'External Display' : `External Display · ${tag.replace('x', '×')}`;
+}
+
+/**
+ * Default (auto) name for a screen profile (doc v3 §5.1, pitfall A5).
+ * Profile-driven so it also works during migration, when no live display is
+ * available: `profile` only needs `isInternal` (and `key`, to exclude itself
+ * from the sibling count); `display` is optional and, when it carries a
+ * non-empty macOS name, that name wins.
+ *
+ *  - internal → "MacBook Screen"
+ *  - external → "External Display", or "External Display N" where
+ *    N = 1 + number of OTHER external profiles already in `screens`
+ *    (so a second monitor becomes "External Display 2"). N is bumped past any
+ *    name another profile already uses, so two auto-named profiles can never
+ *    collide (e.g. renaming two screens back to empty, or migrating several
+ *    v2 auto-labelled externals).
+ */
+export function defaultScreenName(profile, screens = {}, display = null) {
+  const liveName = String(display?.name ?? '').trim();
+  if (liveName) return liveName;
+  const internal =
+    typeof profile?.isInternal === 'boolean' ? profile.isInternal : isInternalDisplay(display ?? profile);
+  if (internal) return DEFAULT_SCREEN_NAMES.internal;
+
+  const others = Object.entries(screens ?? {}).filter(
+    ([k, s]) => s && typeof s === 'object' && k !== profile?.key && !s.isInternal,
+  );
+  const taken = new Set(others.map(([, s]) => String(s.name ?? '')));
+  let n = others.length + 1;
+  let candidate = n === 1 ? DEFAULT_SCREEN_NAMES.external : `${DEFAULT_SCREEN_NAMES.external} ${n}`;
+  while (taken.has(candidate)) {
+    n += 1;
+    candidate = `${DEFAULT_SCREEN_NAMES.external} ${n}`;
+  }
+  return candidate;
+}
+
+/**
+ * Patch that brings a matched profile up to date with the connected display:
+ * `lastSeenDisplayId` when the id changed and `width`/`height` when the
+ * logical size differs (macOS "Looks like…" change, or a v2-migrated profile
+ * whose size is still null). Returns null when nothing needs writing.
+ * Used by BOTH `syncDisplays` and the per-window resolve path (pitfall C2).
+ */
+export function profileRefreshPatch(screen, display) {
+  const patch = {};
+  if (screen?.lastSeenDisplayId !== display?.id) patch.lastSeenDisplayId = display?.id ?? null;
+  const d = dimensionsOf(display);
+  if (d && (screen?.width !== d.width || screen?.height !== d.height)) {
+    patch.width = d.width;
+    patch.height = d.height;
+  }
+  return Object.keys(patch).length ? patch : null;
 }
 
 /** A fresh, unconfirmed profile for a display. */

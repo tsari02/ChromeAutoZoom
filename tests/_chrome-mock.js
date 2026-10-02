@@ -180,6 +180,8 @@ export function createChromeMock({
     await events.onZoomChange.emit(info);
   }
 
+  let openPopupFailure = null; // see helpers.failOpenPopup / allowOpenPopup
+
   const chrome = {
     runtime: {
       id: 'mock-extension-id',
@@ -343,6 +345,15 @@ export function createChromeMock({
       async setTitle(d) {
         record('action.setTitle', d);
       },
+      /**
+       * chrome.action.openPopup() (Chrome 127+). Rejects while a failure is
+       * armed via `failOpenPopup(message)` — e.g. "Could not find an active
+       * browser window." — and resolves otherwise. Every call is recorded.
+       */
+      async openPopup(opts) {
+        record('action.openPopup', opts ?? {});
+        if (openPopupFailure) throw new Error(openPopupFailure);
+      },
     },
   };
 
@@ -368,6 +379,25 @@ export function createChromeMock({
     moveWindow(id, rect) {
       Object.assign(state.windows.get(id), rect);
     },
+    /** Add a normal window to the world (e.g. one that sits on a newly plugged-in monitor). */
+    addWindow(w) {
+      state.windows.set(w.id, { type: 'normal', state: 'normal', focused: false, ...w });
+      state.nextWindowId = Math.max(state.nextWindowId, w.id + 1);
+    },
+    /** Add a tab to the world (per-origin scope, not discarded unless stated). */
+    addTab(t) {
+      state.tabs.set(t.id, { active: false, discarded: false, scope: 'per-origin', tempZoom: null, ...t });
+      state.nextTabId = Math.max(state.nextTabId, t.id + 1);
+    },
+    /** Make chrome.action.openPopup() reject with `message` until allowOpenPopup(). */
+    failOpenPopup(message = 'Could not find an active browser window.') {
+      openPopupFailure = String(message);
+    },
+    allowOpenPopup() {
+      openPopupFailure = null;
+    },
+    /** Fake clock for `updatedAt` / `createdAt` ordering (see `clock` below). */
+    clock,
     /** Simulate the user pressing Cmd +/- or Cmd 0 (Chrome changes zoom, then fires the event). */
     async userZoom(tabId, factor) {
       await chrome.tabs.setZoom(tabId, factor);
@@ -389,8 +419,41 @@ export function createChromeMock({
   return { chrome, ...helpers };
 }
 
+// Fake clock ------------------------------------------------------------------
+//
+// `Date.now` is what storage.js / site-deltas.js / screen-keys.js stamp into
+// `updatedAt` and `createdAt`. Tests that depend on ordering pin it here; every
+// `installChromeMock()` restores the real clock first so a pinned time never
+// leaks into the next test.
+const realDateNow = Date.now;
+let fakeNow = null;
+export const clock = {
+  /** Pin Date.now() to `ms`. */
+  set(ms) {
+    fakeNow = Number(ms);
+    Date.now = () => fakeNow;
+  },
+  /** Move the pinned clock forward (pins it to the real time first if needed). */
+  advance(ms) {
+    if (fakeNow == null) clock.set(realDateNow());
+    fakeNow += Number(ms);
+    return fakeNow;
+  },
+  restore() {
+    fakeNow = null;
+    Date.now = realDateNow;
+  },
+  get now() {
+    return fakeNow ?? realDateNow();
+  },
+  get pinned() {
+    return fakeNow != null;
+  },
+};
+
 /** Install a mock as the global `chrome` (modules read it lazily at call time). */
 export function installChromeMock(opts) {
+  clock.restore();
   const mock = createChromeMock(opts);
   globalThis.chrome = mock.chrome;
   return mock;
@@ -423,6 +486,36 @@ export const DISPLAY_EXTERNAL_2 = Object.freeze({
   isInternal: false,
   bounds: { left: 4072, top: -300, width: 2560, height: 1440 },
   workArea: { left: 4072, top: -262, width: 2560, height: 1402 },
+});
+
+/** 4K at 1× — the map says 150% (v2's flat default would have said 125%). */
+export const DISPLAY_EXTERNAL_4K = Object.freeze({
+  id: '3310028840',
+  name: 'LG HDR 4K',
+  isPrimary: false,
+  isInternal: false,
+  bounds: { left: 6632, top: -500, width: 3840, height: 2160 },
+  workArea: { left: 6632, top: -462, width: 3840, height: 2122 },
+});
+
+/** 1080p — the map says 100%. */
+export const DISPLAY_EXTERNAL_1080P = Object.freeze({
+  id: '4471120013',
+  name: 'BenQ GW2480',
+  isPrimary: false,
+  isInternal: false,
+  bounds: { left: -1920, top: 0, width: 1920, height: 1080 },
+  workArea: { left: -1920, top: 38, width: 1920, height: 1042 },
+});
+
+/** What macOS Chrome actually reports on many Macs: name "" for every display. */
+export const DISPLAY_NAMELESS_QHD = Object.freeze({
+  id: '2',
+  name: '',
+  isPrimary: false,
+  isInternal: false,
+  bounds: { left: 1512, top: 0, width: 2560, height: 1440 },
+  workArea: { left: 1512, top: 38, width: 2560, height: 1402 },
 });
 
 export function windowOn(display, id, extra = {}) {

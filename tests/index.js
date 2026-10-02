@@ -6,6 +6,8 @@
 // process. `node --test` (no args) and `node --test 'tests/*.test.js'` still
 // run the individual files directly.
 import './zoom-ladder.test.js';
+import './zoom-map.test.js';
+import './site-deltas.test.js';
 import './geometry.test.js';
 import './screen-keys.test.js';
 import './url-rules.test.js';
