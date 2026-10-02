@@ -532,8 +532,43 @@ export function windowOn(display, id, extra = {}) {
   };
 }
 
-/** Fully-onboarded storage.local with the two standard screens. */
+/** Fully-onboarded v3 storage.local with the two standard screens. */
 export function onboardedLocal(overrides = {}) {
+  return {
+    schemaVersion: 3,
+    enabled: true,
+    onboardingCompleted: true,
+    learnedDefaults: {},
+    screens: {
+      internal: {
+        key: 'internal',
+        name: 'Built-in Retina Display',
+        isInternal: true,
+        width: 1512,
+        height: 982,
+        zoomFactor: 1.0,
+        lastSeenDisplayId: DISPLAY_INTERNAL.id,
+        createdAt: 1790960000000,
+      },
+      'ext:lg-ultrafine': {
+        key: 'ext:lg-ultrafine',
+        name: 'LG UltraFine',
+        isInternal: false,
+        width: 2560,
+        height: 1440,
+        zoomFactor: 1.25,
+        lastSeenDisplayId: DISPLAY_EXTERNAL.id,
+        createdAt: 1790960001000,
+      },
+    },
+    siteStepDeltas: {},
+    excludedHosts: {},
+    ...overrides,
+  };
+}
+
+/** The exact storage.local shape shipped by 1.0.0 (schema v2), for migration tests. */
+export function v2Local(overrides = {}) {
   return {
     schemaVersion: 2,
     enabled: true,
@@ -542,7 +577,7 @@ export function onboardedLocal(overrides = {}) {
     screens: {
       internal: {
         key: 'internal',
-        name: 'Built-in Retina Display',
+        name: 'Built-in Display',
         isInternal: true,
         zoomFactor: 1.0,
         confirmed: true,
@@ -561,4 +596,12 @@ export function onboardedLocal(overrides = {}) {
     excludedHosts: {},
     ...overrides,
   };
+}
+
+/**
+ * v3 delta rows for one host: deltaRows({ 'ext:lg-ultrafine': 1, internal: 0 }, 1790961000000)
+ * → { 'ext:lg-ultrafine': { delta: 1, updatedAt }, internal: { delta: 0, updatedAt } }
+ */
+export function deltaRows(byKey, updatedAt = 1790961000000) {
+  return Object.fromEntries(Object.entries(byKey).map(([k, delta]) => [k, { delta, updatedAt }]));
 }

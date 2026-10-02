@@ -30,7 +30,7 @@ export const RECOMMENDED_ZOOM = Object.freeze({
 });
 
 /** storage.local schema version (engineering doc v3 §3). */
-export const SCHEMA_VERSION = 2; // → 3 in step 2 together with storage.js
+export const SCHEMA_VERSION = 3;
 
 /** Stable key for the built-in display profile. */
 export const INTERNAL_KEY = 'internal';

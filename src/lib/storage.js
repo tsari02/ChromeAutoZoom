@@ -1,44 +1,88 @@
-// Typed storage wrappers + schema migration (engineering doc §4).
+// Typed storage wrappers + schema migration (engineering doc v3 §3 / §5.3).
 // storage.local  → durable settings.   storage.session → per-browser-session caches.
-import { DEFAULT_ZOOMS, SCHEMA_VERSION, INTERNAL_KEY } from './constants.js';
+import { SCHEMA_VERSION, INTERNAL_KEY, SCREEN_NAME_MAX_LENGTH, RECOMMENDED_ZOOM } from './constants.js';
 import { hostOf } from './url-rules.js';
+import { defaultScreenName } from './screen-keys.js';
+import { isSizeKey, withLearnedDefault } from './zoom-map.js';
+import { withDelta, withoutHost } from './site-deltas.js';
 
 const LOCAL_KEYS = [
   'schemaVersion',
   'enabled',
   'onboardingCompleted',
-  'defaults',
+  'learnedDefaults',
   'screens',
   'siteStepDeltas',
   'excludedHosts',
 ];
+
+/** v1/v2 keys that no longer exist in v3 and are removed by migration. */
+const LEGACY_LOCAL_KEYS = ['defaults', 'defaultInternalZoom', 'defaultExternalZoom', 'excludedOrigins'];
+
+/** v2 auto-labels (`displayLabel`): replaced by `defaultScreenName` on migration. */
+const V2_AUTO_LABEL_RE = /^(?:Built-in Display|External Display(?: · \d+[x×]\d+)?)$/;
 
 export function defaultState() {
   return {
     schemaVersion: SCHEMA_VERSION,
     enabled: true,
     onboardingCompleted: false,
-    defaults: { ...DEFAULT_ZOOMS },
+    learnedDefaults: {},
     screens: {},
     siteStepDeltas: {},
     excludedHosts: {},
   };
 }
 
-function normalize(raw) {
+const isRecord = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
+
+/** learnedDefaults: only positive "WxH" keys with positive finite factors survive (pitfall A4). */
+export function normalizeLearnedDefaults(raw) {
+  const out = {};
+  if (!isRecord(raw)) return out;
+  for (const [key, value] of Object.entries(raw)) {
+    const f = Number(value);
+    if (isSizeKey(key) && Number.isFinite(f) && f > 0) out[key] = f;
+  }
+  return out;
+}
+
+/** siteStepDeltas: {host: {screenKey: {delta:int, updatedAt:num}}}; anything else is dropped. */
+export function normalizeSiteStepDeltas(raw) {
+  const out = {};
+  if (!isRecord(raw)) return out;
+  for (const [host, rows] of Object.entries(raw)) {
+    if (!host || !isRecord(rows)) continue;
+    const next = {};
+    for (const [key, row] of Object.entries(rows)) {
+      if (!key || !isRecord(row)) continue;
+      if (!Number.isInteger(row.delta) || !Number.isFinite(row.updatedAt)) continue;
+      next[key] = { delta: row.delta, updatedAt: row.updatedAt };
+    }
+    if (Object.keys(next).length) out[host] = next;
+  }
+  return out;
+}
+
+function normalizeScreens(raw) {
+  const out = {};
+  if (!isRecord(raw)) return out;
+  for (const [key, screen] of Object.entries(raw)) if (isRecord(screen)) out[key] = screen;
+  return out;
+}
+
+/** Defaults-merged, shape-validated state. Exported for tests; `getState()` uses it. */
+export function normalize(raw) {
   const d = defaultState();
+  const r = isRecord(raw) ? raw : {};
   return {
-    schemaVersion: Number.isInteger(raw.schemaVersion) ? raw.schemaVersion : d.schemaVersion,
-    enabled: typeof raw.enabled === 'boolean' ? raw.enabled : d.enabled,
-    onboardingCompleted: raw.onboardingCompleted === true,
-    defaults: { ...d.defaults, ...(raw.defaults ?? {}) },
-    screens: raw.screens && typeof raw.screens === 'object' ? raw.screens : {},
-    siteStepDeltas:
-      raw.siteStepDeltas && typeof raw.siteStepDeltas === 'object' ? raw.siteStepDeltas : {},
-    excludedHosts:
-      raw.excludedHosts && typeof raw.excludedHosts === 'object' && !Array.isArray(raw.excludedHosts)
-        ? raw.excludedHosts
-        : {},
+    schemaVersion: Number.isInteger(r.schemaVersion) ? r.schemaVersion : d.schemaVersion,
+    enabled: typeof r.enabled === 'boolean' ? r.enabled : d.enabled,
+    onboardingCompleted: r.onboardingCompleted === true,
+    learnedDefaults: normalizeLearnedDefaults(r.learnedDefaults),
+    screens: normalizeScreens(r.screens),
+    siteStepDeltas: normalizeSiteStepDeltas(r.siteStepDeltas),
+    excludedHosts: isRecord(r.excludedHosts) ? r.excludedHosts : {},
   };
 }
 
@@ -114,9 +158,13 @@ export function initState() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Migration (doc v3 §3). v1 → v2 shape (unchanged logic) → v3.
+// ---------------------------------------------------------------------------
+
 /**
- * Migrate older schemas (v1 PRD shape: defaultInternalZoom / defaultExternalZoom,
- * excludedOrigins array, origin-keyed siteStepDeltas) to the v2 schema.
+ * Migrate older schemas to v3. Runs in onInstalled{reason:'update'}; idempotent
+ * at ≥ current version (then only fills missing keys).
  */
 export async function migrate() {
   const raw = await chrome.storage.local.get(null);
@@ -129,57 +177,138 @@ export async function migrate() {
 }
 
 async function migrateFrom(raw, from) {
-  const next = defaultState();
-  next.enabled = typeof raw.enabled === 'boolean' ? raw.enabled : true;
-  next.onboardingCompleted = raw.onboardingCompleted === true;
-  next.defaults = {
-    internal: Number(raw.defaults?.internal ?? raw.defaultInternalZoom ?? DEFAULT_ZOOMS.internal),
-    external: Number(raw.defaults?.external ?? raw.defaultExternalZoom ?? DEFAULT_ZOOMS.external),
+  const v2 = toV2Shape(raw);
+  const next = v2ToV3(v2, Date.now());
+  await chrome.storage.local.set(next);
+  const stale = LEGACY_LOCAL_KEYS.filter((k) => k in raw);
+  if (stale.length) await chrome.storage.local.remove(stale);
+  // storage.session: only `windowScreen` survives into v3. Everything else the
+  // v2 setup window kept there is dropped (it is rebuilt lazily anyway).
+  const session = await chrome.storage.session.get(['windowScreen']);
+  await chrome.storage.session.clear();
+  if (isRecord(session.windowScreen)) await chrome.storage.session.set({ windowScreen: session.windowScreen });
+  return { from, to: SCHEMA_VERSION, migrated: true };
+}
+
+/**
+ * v1 (PRD shape: defaultInternalZoom / defaultExternalZoom, excludedOrigins
+ * array, origin-keyed siteStepDeltas) or v2 raw → the v2 in-memory shape.
+ */
+function toV2Shape(raw) {
+  const legacy = isRecord(raw.defaults) ? raw.defaults : {};
+  const seeds = {
+    internal: Number(legacy.internal ?? raw.defaultInternalZoom) || RECOMMENDED_ZOOM.internal,
+    external: Number(legacy.external ?? raw.defaultExternalZoom) || RECOMMENDED_ZOOM.externalFallback,
+  };
+  const v2 = {
+    enabled: typeof raw.enabled === 'boolean' ? raw.enabled : true,
+    onboardingCompleted: raw.onboardingCompleted === true,
+    screens: {},
+    siteStepDeltas: {},
+    excludedHosts: {},
   };
 
-  for (const [oldKey, s] of Object.entries(raw.screens ?? {})) {
-    if (!s || typeof s !== 'object') continue;
+  for (const [oldKey, s] of Object.entries(isRecord(raw.screens) ? raw.screens : {})) {
+    if (!isRecord(s)) continue;
     const key = s.isInternal ? INTERNAL_KEY : s.key ?? oldKey;
-    next.screens[key] = {
+    v2.screens[key] = {
       key,
-      name: s.name ?? (s.isInternal ? 'Built-in Display' : 'External Display'),
+      name: typeof s.name === 'string' ? s.name : '',
       isInternal: Boolean(s.isInternal),
-      zoomFactor: Number(s.zoomFactor) || (s.isInternal ? next.defaults.internal : next.defaults.external),
-      confirmed: s.confirmed === true,
+      zoomFactor: Number(s.zoomFactor) || (s.isInternal ? seeds.internal : seeds.external),
       lastSeenDisplayId: s.lastSeenDisplayId ?? s.hardwareId ?? null,
     };
   }
 
-  for (const [k, v] of Object.entries(raw.siteStepDeltas ?? {})) {
+  for (const [k, v] of Object.entries(isRecord(raw.siteStepDeltas) ? raw.siteStepDeltas : {})) {
     const host = k.includes('://') ? hostOf(k) : k.toLowerCase();
-    if (host && Number.isInteger(v) && v !== 0) next.siteStepDeltas[host] = v;
+    if (host && Number.isInteger(v) && v !== 0) v2.siteStepDeltas[host] = v;
   }
 
   const excluded = Array.isArray(raw.excludedOrigins)
     ? raw.excludedOrigins
     : Array.isArray(raw.excludedHosts)
       ? raw.excludedHosts
-      : Object.keys(raw.excludedHosts ?? {});
+      : Object.keys(isRecord(raw.excludedHosts) ? raw.excludedHosts : {});
   for (const k of excluded) {
     const host = String(k).includes('://') ? hostOf(k) : String(k).toLowerCase();
-    if (host) next.excludedHosts[host] = true;
+    if (host) v2.excludedHosts[host] = true;
   }
-
-  const stale = ['defaultInternalZoom', 'defaultExternalZoom', 'excludedOrigins'].filter((k) => k in raw);
-  await chrome.storage.local.set(next);
-  if (stale.length) await chrome.storage.local.remove(stale);
-  return { from, to: SCHEMA_VERSION, migrated: true };
+  return v2;
 }
 
-/** Persist a relative step delta for a host. 0 (or non-integer) removes the entry. */
-export async function setSiteStepDelta(host, delta) {
+/**
+ * v2 → v3 (doc v3 §3):
+ *  - `defaults` dropped (learnedDefaults starts empty)
+ *  - screens: `confirmed` dropped; width/height null until the display is next
+ *    seen; createdAt = now; v2 auto-labels replaced by defaultScreenName()
+ *    (profile-driven, no live display needed — pitfall A5); other names kept
+ *  - siteStepDeltas[host] = n fans out to {k: {delta: n, updatedAt: now}} for
+ *    EVERY existing screen key k — reproduces v2 behaviour exactly until the
+ *    user adjusts per screen
+ */
+function v2ToV3(v2, now) {
+  const next = defaultState();
+  next.enabled = v2.enabled;
+  next.onboardingCompleted = v2.onboardingCompleted;
+  next.excludedHosts = v2.excludedHosts;
+
+  for (const [key, s] of Object.entries(v2.screens)) {
+    const profile = {
+      key,
+      name: s.name.trim(),
+      isInternal: s.isInternal,
+      width: null,
+      height: null,
+      zoomFactor: s.zoomFactor,
+      lastSeenDisplayId: s.lastSeenDisplayId,
+      createdAt: now,
+    };
+    if (!profile.name || V2_AUTO_LABEL_RE.test(profile.name)) profile.name = defaultScreenName(profile, next.screens);
+    next.screens[key] = profile;
+  }
+
+  const keys = Object.keys(next.screens);
+  for (const [host, n] of Object.entries(v2.siteStepDeltas)) {
+    if (!keys.length) break; // nothing to fan out onto
+    next.siteStepDeltas[host] = Object.fromEntries(keys.map((k) => [k, { delta: n, updatedAt: now }]));
+  }
+  return next;
+}
+
+// ---------------------------------------------------------------------------
+// Mutations
+// ---------------------------------------------------------------------------
+
+/**
+ * Persist an explicit per-(host, screen) step delta. 0 IS persisted — it is
+ * what stops that screen from inheriting — unless the host's rows are then
+ * all 0, in which case the host is pruned (see site-deltas.withDelta).
+ */
+export async function setSiteStepDelta(host, screenKey, delta) {
+  if (!host || !screenKey || !Number.isInteger(delta)) return;
+  await updateState(({ siteStepDeltas }) => ({ siteStepDeltas: withDelta(siteStepDeltas, host, screenKey, delta) }));
+}
+
+/** Remove every delta row of a host (exclude). */
+export async function clearHostDeltas(host) {
   if (!host) return;
   await updateState(({ siteStepDeltas }) => {
-    const next = { ...siteStepDeltas };
-    if (Number.isInteger(delta) && delta !== 0) next[host] = delta;
-    else delete next[host];
-    return { siteStepDeltas: next };
+    if (!(host in siteStepDeltas)) return null;
+    return { siteStepDeltas: withoutHost(siteStepDeltas, host) };
   });
+}
+
+/**
+ * Teach the map: `learnedDefaults[sizeKey] = factor`. Refuses keys without
+ * positive dimensions (a v2-migrated profile has no size until next seen, so
+ * its key is null — pitfall A4) and non-positive factors. Returns whether the
+ * value was written.
+ */
+export async function setLearnedDefault(sizeKey, factor) {
+  if (!isSizeKey(sizeKey) || !Number.isFinite(factor) || factor <= 0) return false;
+  await updateState(({ learnedDefaults }) => ({ learnedDefaults: withLearnedDefault(learnedDefaults, sizeKey, factor) }));
+  return true;
 }
 
 /** Mark/unmark a host as excluded. */
@@ -202,6 +331,22 @@ export async function upsertScreen(key, patch) {
 }
 
 /**
+ * Create a screen profile only if no profile exists for `key` (serialized, so
+ * N concurrent callers racing for the same never-seen display produce exactly
+ * one creation). Returns { screen, created } — `created` tells the caller
+ * whether IT is the one that must normalize the new screen (pitfall C1).
+ */
+export async function createScreenIfAbsent(key, profile) {
+  let created = false;
+  const { screens } = await updateState(({ screens }) => {
+    if (screens[key]) return null;
+    created = true;
+    return { screens: { ...screens, [key]: { ...profile, key } } };
+  });
+  return { screen: screens[key], created };
+}
+
+/**
  * Recompute the whole screens record from the CURRENT value (serialized).
  * `fn(screens, state)` returns the next record, or null to leave it alone.
  */
@@ -213,17 +358,37 @@ export async function updateScreens(fn) {
   return screens;
 }
 
+/** Trim, collapse whitespace, cap at SCREEN_NAME_MAX_LENGTH. '' when nothing usable is left. */
+export function cleanScreenName(name) {
+  return String(name ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, SCREEN_NAME_MAX_LENGTH)
+    .trim();
+}
+
+/**
+ * Rename a screen. Empty (after cleaning) reverts to the default auto name.
+ * Returns the updated profile, or null when the key is unknown.
+ */
+export async function renameScreen(key, name) {
+  const { screens } = await updateState((state) => {
+    const screen = state.screens[key];
+    if (!screen) return null;
+    const next = cleanScreenName(name) || defaultScreenName(screen, state.screens);
+    if (next === screen.name) return null;
+    return { screens: { ...state.screens, [key]: { ...screen, name: next } } };
+  });
+  return screens[key] ?? null;
+}
+
 // ---------------------------------------------------------------------------
-// storage.session — the small shared maps.
+// storage.session — only the window → screen map remains in v3.
 // ---------------------------------------------------------------------------
 
 export async function getSession() {
-  const raw = await chrome.storage.session.get(['windowScreen', 'setupWindowId', 'pendingSetupKeys']);
-  return {
-    windowScreen: raw.windowScreen ?? {},
-    setupWindowId: Number.isInteger(raw.setupWindowId) ? raw.setupWindowId : null,
-    pendingSetupKeys: Array.isArray(raw.pendingSetupKeys) ? raw.pendingSetupKeys : [],
-  };
+  const raw = await chrome.storage.session.get(['windowScreen']);
+  return { windowScreen: isRecord(raw.windowScreen) ? raw.windowScreen : {} };
 }
 
 export async function getWindowScreen(windowId) {
@@ -247,24 +412,4 @@ export function deleteWindowScreen(windowId) {
     delete next[String(windowId)];
     await chrome.storage.session.set({ windowScreen: next });
   });
-}
-
-export function setSetupWindowId(id) {
-  return serialized(async () => {
-    if (Number.isInteger(id)) await chrome.storage.session.set({ setupWindowId: id });
-    else await chrome.storage.session.remove('setupWindowId');
-  });
-}
-
-export function addPendingSetupKey(key) {
-  return serialized(async () => {
-    const { pendingSetupKeys } = await getSession();
-    if (pendingSetupKeys.includes(key)) return false;
-    await chrome.storage.session.set({ pendingSetupKeys: [...pendingSetupKeys, key] });
-    return true;
-  });
-}
-
-export function clearPendingSetupKeys() {
-  return serialized(() => chrome.storage.session.remove('pendingSetupKeys'));
 }
