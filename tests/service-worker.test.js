@@ -2,7 +2,7 @@
 // install → first-run popup → Accept → events flow end-to-end. Guards against
 // wiring errors that unit tests of individual modules would miss, and covers
 // the v3 §6 / §10 service-worker scenarios plus the B1 regression.
-import { test, describe, beforeEach } from 'node:test';
+import { test, describe, beforeEach, mock as nodeMock } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   installChromeMock,
@@ -297,5 +297,53 @@ describe('service-worker boot (install → first-run popup → Accept → events
     await chrome.runtime.onInstalled.emit({ reason: 'update', previousVersion: '1.1.0' });
     await sleep(20);
     assert.equal(openPopupCalls(), 0, 'no popup once accepted');
+  });
+});
+
+// The shared worker above has already spent its one retry, so the remaining B1
+// branch needs a fresh instance: a query string gives Node a separate module
+// (fresh `popupRetryArmed` / `popupRetryUsed`) whose listeners bind to a fresh
+// mock world. Library modules stay shared; they read `globalThis.chrome` lazily.
+describe('service-worker — REGRESSION B1: the armed retry is skipped once onboarding is accepted', () => {
+  test('install rejection is logged; Accept before the next focus → no retry on any later focus', async () => {
+    const world = installChromeMock({
+      displays: [DISPLAY_INTERNAL, DISPLAY_EXTERNAL],
+      windows: [windowOn(DISPLAY_EXTERNAL, 2), windowOn(DISPLAY_INTERNAL, 1)],
+      tabs: [
+        { id: 22, windowId: 2, url: 'https://example.com/', active: true },
+        { id: 11, windowId: 1, url: 'https://example.com/', active: true },
+      ],
+    });
+    world.failOpenPopup('Could not find an active browser window.');
+    invalidateDisplays();
+    const warn = nodeMock.method(console, 'warn', () => {});
+    try {
+      await import('../src/background/service-worker.js?instance=b1-accepted');
+      const c = world.chrome;
+      await c.runtime.onInstalled.emit({ reason: 'install' });
+      await sleep(20);
+      assert.equal(world.callsTo('action.openPopup').length, 1, 'one attempt at install');
+      assert.ok(
+        warn.mock.calls.some((call) => /openPopup failed after install/.test(String(call.arguments[0]))),
+        'the rejection is logged',
+      );
+
+      // The user clicks the toolbar icon and accepts before any focus change.
+      world.allowOpenPopup();
+      const res = await new Promise((resolve) => {
+        c.runtime.onMessage.emit({ type: MSG.CONFIRM_SETUP, screens: { [INT]: 1.0, [EXT]: 1.25 } }, { id: 'mock' }, resolve);
+      });
+      assert.equal(res.ok, true, res.error);
+      assert.equal((await storage.getState()).onboardingCompleted, true);
+      await sleep(80); // background normalization after Accept
+
+      for (const id of [2, 1, 2]) await c.windows.onFocusChanged.emit(id);
+      await sleep(20);
+      assert.equal(world.callsTo('action.openPopup').length, 1, 'no retry once onboarding is accepted');
+      assert.equal(world.zoomOf(22), 1.25, 'focus still syncs zoom normally');
+    } finally {
+      warn.mock.restore();
+      globalThis.chrome = chrome; // hand the global back to the shared instance above
+    }
   });
 });
