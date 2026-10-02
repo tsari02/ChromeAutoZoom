@@ -183,14 +183,22 @@ export function profileRefreshPatch(screen, display) {
   return Object.keys(patch).length ? patch : null;
 }
 
-/** A fresh, unconfirmed profile for a display. */
-export function newScreenProfile(display, key, zoomFactor) {
+/**
+ * A fresh profile for a display (doc v3 §5.1). `existingScreens` is what the
+ * auto name is numbered against. Size is `null` when Chrome reported none
+ * (never NaN / 0 — see `dimensionsOf`). No `confirmed` flag in v3.
+ */
+export function newScreenProfile(display, key, zoomFactor, existingScreens = {}) {
+  const isInternal = isInternalDisplay(display);
+  const d = dimensionsOf(display);
   return {
     key,
-    name: displayLabel(display),
-    isInternal: isInternalDisplay(display),
+    name: defaultScreenName({ key, isInternal }, existingScreens, display),
+    isInternal,
+    width: d?.width ?? null,
+    height: d?.height ?? null,
     zoomFactor,
-    confirmed: false,
-    lastSeenDisplayId: display.id,
+    lastSeenDisplayId: display?.id ?? null,
+    createdAt: Date.now(),
   };
 }

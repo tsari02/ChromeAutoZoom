@@ -20,6 +20,7 @@ import {
   DISPLAY_EXTERNAL_4K,
   DISPLAY_NAMELESS_QHD,
   onboardedLocal,
+  clock,
 } from './_chrome-mock.js';
 
 describe('screen-keys', () => {
@@ -115,10 +116,12 @@ describe('screen-keys', () => {
     assert.equal(buildKey(twinB, [builtin, twinA, twinB]), 'ext:2560x1440#2');
     assert.equal(buildKey(twinB, [builtin, twinB, twinA]), 'ext:2560x1440#2', 'sibling order does not matter');
 
-    // Labels are usable in the UI without a name.
+    // Labels are usable in the UI without a name; the profile itself gets the
+    // v3 auto name (displayLabel is only used for resolution text now).
     assert.equal(displayLabel(builtin), 'Built-in Display');
     assert.equal(displayLabel(ext), 'External Display · 2560×1440');
-    assert.equal(newScreenProfile(ext, buildKey(ext, all), 1.25).name, 'External Display · 2560×1440');
+    assert.equal(newScreenProfile(ext, buildKey(ext, all), 1.25).name, 'External Display');
+    assert.equal(newScreenProfile(ext4k, buildKey(ext4k, all), 1.5, { 'ext:2560x1440': { isInternal: false } }).name, 'External Display 2');
 
     // And they round-trip through matchSavedScreen on reconnect with a new id.
     const screens = { [buildKey(ext, all)]: newScreenProfile(ext, buildKey(ext, all), 1.25) };
@@ -127,18 +130,34 @@ describe('screen-keys', () => {
     assert.equal(m?.needsIdUpdate, true);
   });
 
-  test('displayLabel / newScreenProfile', () => {
+  test('displayLabel / newScreenProfile (v3 shape: size from bounds, createdAt, no confirmed flag)', () => {
     assert.equal(displayLabel({ name: '  ', isInternal: true }), 'Built-in Display');
     assert.equal(displayLabel(DISPLAY_EXTERNAL), 'LG UltraFine');
-    const p = newScreenProfile(DISPLAY_EXTERNAL, 'ext:lg-ultrafine', 1.25);
-    assert.deepEqual(p, {
-      key: 'ext:lg-ultrafine',
-      name: 'LG UltraFine',
-      isInternal: false,
-      zoomFactor: 1.25,
-      confirmed: false,
-      lastSeenDisplayId: DISPLAY_EXTERNAL.id,
-    });
+    clock.set(1790964000000);
+    try {
+      const p = newScreenProfile(DISPLAY_EXTERNAL, 'ext:lg-ultrafine', 1.25);
+      assert.deepEqual(p, {
+        key: 'ext:lg-ultrafine',
+        name: 'LG UltraFine',
+        isInternal: false,
+        width: 2560,
+        height: 1440,
+        zoomFactor: 1.25,
+        lastSeenDisplayId: DISPLAY_EXTERNAL.id,
+        createdAt: 1790964000000,
+      });
+      assert.ok(!('confirmed' in p));
+      const internal = newScreenProfile(DISPLAY_INTERNAL, 'internal', 1.0);
+      assert.equal(internal.name, 'Built-in Retina Display', 'macOS name preferred when present');
+      assert.equal(internal.isInternal, true);
+      assert.deepEqual([internal.width, internal.height], [1512, 982]);
+      // A display without usable bounds → null size (never NaN / 0).
+      const sizeless = newScreenProfile({ id: '5', name: '', isInternal: false }, 'ext:unknown', 1.25);
+      assert.deepEqual([sizeless.width, sizeless.height], [null, null]);
+      assert.equal(sizeless.name, 'External Display');
+    } finally {
+      clock.restore();
+    }
   });
 
   test('dimensionsOf reads `bounds` on a raw display and top-level width/height on a stored profile', () => {

@@ -1,19 +1,21 @@
-// Orchestration (engineering doc §5.6 / §5.7): syncWindow · syncTab ·
-// normalizeScreen · handleZoomChange · releaseAll · clearSiteExceptions.
+// Orchestration (engineering doc v3 §5.4 / §6): syncDisplays · syncAll ·
+// syncWindow · syncTab · normalizeScreen · handleZoomChange · setEnabled ·
+// releaseAll · restoreChromeZoom · confirmSetup · renameScreen.
 //
 // No correctness depends on in-memory state. Every function reads storage
 // fresh and writes storage BEFORE issuing the zoom calls it implies, so the
 // stateless manual-zoom detector always sees the new expected value.
-import { NORMALIZE_CONCURRENCY, INTERNAL_KEY } from './constants.js';
+import { NORMALIZE_CONCURRENCY } from './constants.js';
 import * as storage from './storage.js';
 import { getDisplays } from './display-cache.js';
 import { resolveDisplay } from './geometry.js';
-import { matchSavedScreen, buildKey, newScreenProfile, isInternalDisplay } from './screen-keys.js';
+import { matchSavedScreen, buildKey, newScreenProfile, profileRefreshPatch } from './screen-keys.js';
 import { expectedZoom, isSameZoom, stepDelta } from './zoom-ladder.js';
+import { recommendedZoom, sizeKey, withLearnedDefault } from './zoom-map.js';
+import { resolveDelta } from './site-deltas.js';
 import { hostOf } from './url-rules.js';
 import { isManageable, applyZoom, releaseZoom, safeCall } from './tab-zoom.js';
 import * as badge from './badge.js';
-import { requestNewDisplayPrompt, closeSetupWindow } from './setup-window.js';
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -22,13 +24,15 @@ import { requestNewDisplayPrompt, closeSetupWindow } from './setup-window.js';
 /**
  * The zoom a tab should have, or null when AutoZoom must not touch it
  * (paused, onboarding not finished, unmanageable URL, excluded host).
+ * The site delta is the explicit row for this screen, else the one inherited
+ * from the closest other screen (site-deltas.resolveDelta).
  */
 export function targetFor(tab, screen, state) {
   if (!state?.enabled || !state.onboardingCompleted || !screen) return null;
   if (!isManageable(tab)) return null;
   const host = hostOf(tab.url);
   if (state.excludedHosts?.[host]) return null;
-  return expectedZoom(screen.zoomFactor, state.siteStepDeltas?.[host] ?? 0);
+  return expectedZoom(screen.zoomFactor, resolveDelta(host, screen.key, state).delta);
 }
 
 async function runPool(items, limit, worker) {
@@ -55,53 +59,99 @@ async function normalWindows(populate) {
 // ---------------------------------------------------------------------------
 
 /**
- * Ensure every connected display has a saved profile. New external displays
- * (after onboarding) are queued for the compact new-display prompt.
- * Returns { displays, screens, created }.
+ * Ensure every connected display has a saved profile. New profiles are seeded
+ * from the resolution map (+ learned overrides); matched profiles get their
+ * `lastSeenDisplayId` and logical `width/height` refreshed (pitfall C2 — this
+ * is one of the two refresh paths, `resolveScreenForWindow` is the other).
+ * Returns { displays, screens, created }. Does NOT normalize: the caller
+ * decides (see `syncAll` / `normalizeNewScreen`).
  */
 export async function syncDisplays() {
   const displays = await getDisplays();
   const created = [];
-  let onboardingCompleted = false;
   // Recompute from the CURRENT screens record inside the serialized write so
   // a concurrent popup change (SET_SCREEN_ZOOM) can never be reverted.
   const screens = await storage.updateScreens((saved, state) => {
-    onboardingCompleted = state.onboardingCompleted;
     const next = { ...saved };
     let changed = false;
     created.length = 0;
     for (const d of displays) {
       const m = matchSavedScreen(d, next, displays);
       if (m) {
-        if (m.needsIdUpdate) {
-          next[m.key] = { ...m.screen, lastSeenDisplayId: d.id };
+        const patch = profileRefreshPatch(m.screen, d);
+        if (patch) {
+          next[m.key] = { ...m.screen, ...patch };
           changed = true;
         }
         continue;
       }
       const key = buildKey(d, displays);
-      const zoom = isInternalDisplay(d) ? state.defaults.internal : state.defaults.external;
-      const profile = newScreenProfile(d, key, zoom);
-      // The built-in display never needs a prompt once onboarding is done.
-      if (profile.isInternal && state.onboardingCompleted) profile.confirmed = true;
-      next[key] = profile;
+      next[key] = newScreenProfile(d, key, recommendedZoom(d, state.learnedDefaults), next);
       created.push(key);
       changed = true;
     }
     return changed ? next : null;
   });
-
-  if (onboardingCompleted) {
-    for (const key of created) {
-      if (!screens[key].isInternal) await requestNewDisplayPrompt(key);
-    }
-  }
   return { displays, screens, created };
+}
+
+// In-flight guard for "normalize a freshly created screen" (pitfall C1).
+// `syncAll` and N concurrent `resolveScreenForWindow` calls can all learn about
+// the same never-seen monitor in the same burst; only the caller that actually
+// CREATED the profile asks for normalization, and overlapping requests for the
+// same key join the running pass instead of starting another one. The map is
+// a cache: if the service worker dies mid-pass, background tabs on that screen
+// sync lazily on activation (FR-8) — nothing is lost.
+const normalizingNew = new Map(); // screenKey → Promise<summary|null>
+
+/**
+ * Normalize a screen whose profile was created a moment ago. No-op before
+ * first-run Accept (nothing may be zoomed until then). Never throws.
+ */
+export function normalizeNewScreen(key) {
+  const running = normalizingNew.get(key);
+  if (running) return running;
+  const pass = (async () => {
+    try {
+      const { onboardingCompleted } = await storage.getState();
+      if (!onboardingCompleted) return null;
+      return await normalizeScreen(key);
+    } catch (err) {
+      console.warn('[AutoZoom] normalizeScreen failed:', err?.message ?? err);
+      return null;
+    } finally {
+      normalizingNew.delete(key);
+    }
+  })();
+  normalizingNew.set(key, pass);
+  return pass;
+}
+
+/** Test hook: resolves once every background new-screen normalization has settled. */
+export async function settleBackgroundWork() {
+  while (normalizingNew.size) await Promise.all([...normalizingNew.values()]);
+}
+
+/**
+ * Full pass used by startup, update and display changes: profiles for every
+ * connected display → every window's active tab → whole-screen normalization
+ * for the screens created in THIS pass (decision 1.3: a new monitor gets its
+ * recommended zoom immediately, no prompt). Returns the created keys so the
+ * display-change handler can normalize them again in its delayed pass.
+ */
+export async function syncAll(reason = 'resync') {
+  const { created } = await syncDisplays();
+  await resyncAllWindows(reason);
+  for (const key of created) await normalizeNewScreen(key);
+  return created;
 }
 
 /**
  * Resolve a window to its saved screen profile (creating one if missing).
  * Returns null for minimized/off-screen windows (caller keeps last known key).
+ * A profile created here after first run triggers a background
+ * `normalizeNewScreen` so a window dragged to a never-seen monitor gets ALL
+ * its tabs set, not only the active one.
  */
 async function resolveScreenForWindow(win, displays, state) {
   const resolved = resolveDisplay(win, displays);
@@ -111,16 +161,20 @@ async function resolveScreenForWindow(win, displays, state) {
   let m = matchSavedScreen(display, state.screens, displays);
   if (!m) {
     const key = buildKey(display, displays);
-    const zoom = isInternalDisplay(display) ? state.defaults.internal : state.defaults.external;
-    const profile = newScreenProfile(display, key, zoom);
-    if (profile.isInternal && state.onboardingCompleted) profile.confirmed = true;
-    const screen = await storage.upsertScreen(key, profile);
+    const profile = newScreenProfile(display, key, recommendedZoom(display, state.learnedDefaults), state.screens);
+    // Serialized create-if-absent: of N windows racing for the same new
+    // display exactly one gets `created`, and only that one normalizes (C1).
+    const { screen, created } = await storage.createScreenIfAbsent(key, profile);
     state.screens[key] = screen;
+    if (created && state.onboardingCompleted) normalizeNewScreen(key);
     m = { key, screen, needsIdUpdate: false };
-  } else if (m.needsIdUpdate) {
-    const screen = await storage.upsertScreen(m.key, { lastSeenDisplayId: display.id });
-    state.screens[m.key] = screen;
-    m = { ...m, screen };
+  } else {
+    const patch = profileRefreshPatch(m.screen, display); // id and/or size (C2)
+    if (patch) {
+      const screen = await storage.upsertScreen(m.key, patch);
+      state.screens[m.key] = screen;
+      m = { ...m, screen };
+    }
   }
   return { key: m.key, screen: m.screen, confidence, display };
 }
@@ -141,6 +195,14 @@ export async function screenForWindow(windowId, state) {
   if (!r) return null;
   await storage.setWindowScreen(windowId, r.key);
   return r.screen;
+}
+
+/** Keys of the screens that are connected right now (profiles created if missing). */
+async function connectedKeys() {
+  const { displays, screens } = await syncDisplays();
+  const keys = new Set();
+  for (const d of displays) keys.add(matchSavedScreen(d, screens, displays)?.key ?? buildKey(d, displays));
+  return [...keys];
 }
 
 // ---------------------------------------------------------------------------
@@ -165,10 +227,6 @@ export async function syncWindow(windowId, { reason = 'manual' } = {}) {
     return { key: r.key, changed: false, confidence: r.confidence, result: 'unchanged-key' };
   }
   await storage.setWindowScreen(windowId, r.key);
-
-  if (state.onboardingCompleted && !r.screen.confirmed && !r.screen.isInternal) {
-    await requestNewDisplayPrompt(r.key);
-  }
 
   let result = 'skipped';
   const active = (win.tabs ?? []).find((t) => t.active);
@@ -269,19 +327,22 @@ export async function handleZoomChange({ tabId, oldZoomFactor, newZoomFactor, zo
   const screen = await screenForWindow(tab.windowId, state);
   if (!screen) return 'ignored:no-screen';
 
-  const expected = expectedZoom(screen.zoomFactor, state.siteStepDeltas[host] ?? 0);
+  const expected = expectedZoom(screen.zoomFactor, resolveDelta(host, screen.key, state).delta);
   // (2) Matches what we would set → caused by us (or a no-op) → no record.
   if (isSameZoom(newZoomFactor, expected)) return 'ignored:expected';
 
+  // Explicit row for THIS screen — 0 included. A 0 row is what makes
+  // "correct it back on the laptop" stick instead of re-inheriting the other
+  // screen's delta (doc v3 §5.4); the host is pruned once all its rows are 0.
   const delta = stepDelta(newZoomFactor, screen.zoomFactor);
-  await storage.setSiteStepDelta(host, delta); // 0 ⇒ entry removed
+  await storage.setSiteStepDelta(host, screen.key, delta);
   const next = await storage.getState();
   await badge.update(tab, screen, next);
   return `recorded:${delta}`;
 }
 
 // ---------------------------------------------------------------------------
-// Bulk operations used by the popup / setup page
+// Bulk operations used by the popup
 // ---------------------------------------------------------------------------
 
 async function allManageableTabs() {
@@ -291,7 +352,7 @@ async function allManageableTabs() {
   return tabs;
 }
 
-/** Hand every managed tab back to Chrome's native zoom (Pause / Restore). */
+/** Hand every managed tab back to Chrome's native zoom. */
 export async function releaseAll() {
   const tabs = await allManageableTabs();
   const state = await storage.getState();
@@ -304,23 +365,58 @@ export async function releaseAll() {
   return { released, total: tabs.length };
 }
 
-/** Global toggle (doc §8). Writes state first, then releases / re-applies. */
+/**
+ * Global toggle (doc v3 §5.4).
+ *  - off: "freeze & detach" — ONLY the flag flips and active badges go OFF.
+ *    No zoom call of any kind: tabs keep their per-tab zoom; Chrome itself
+ *    resets them to per-origin on their next cross-document navigation.
+ *  - on: every window's active tab (resyncAllWindows) AND every other tab on
+ *    every connected screen (normalizeScreen per connected key, pitfall A3),
+ *    so background tabs are re-applied immediately, not lazily.
+ */
 export async function setEnabled(enabled) {
   await storage.patchState({ enabled: Boolean(enabled) });
-  if (enabled) return { enabled: true, synced: (await resyncAllWindows('resume')).length };
+  if (!enabled) {
+    const state = await storage.getState();
+    const wins = await normalWindows(true);
+    for (const w of wins) {
+      const active = (w.tabs ?? []).find((t) => t.active);
+      if (active) await badge.update(active, null, state);
+    }
+    return { enabled: false };
+  }
+  const synced = (await resyncAllWindows('resume')).length;
+  const normalized = {};
+  for (const key of await connectedKeys()) normalized[key] = await normalizeScreen(key);
+  return { enabled: true, synced, normalized };
+}
+
+/**
+ * "Restore Chrome's zoom" (RELEASE_ALL) — the ONLY action that hands tabs
+ * back to Chrome (pitfall A2). Pauses first so nothing re-manages a tab
+ * between release and the user's next click, then releases every managed tab.
+ */
+export async function restoreChromeZoom() {
+  await storage.patchState({ enabled: false });
   return { enabled: false, ...(await releaseAll()) };
 }
 
 /**
- * Change one screen's default zoom and normalize every window on it.
- * Storage is written first; normalization runs in the background unless
+ * Change one screen's default zoom and normalize every window on it. Storage
+ * is written first; normalization runs in the background unless
  * `awaitNormalize` is set (tests), so UI responses are never blocked.
+ * External screens also teach the map: the next never-seen monitor with the
+ * same logical size seeds from this value (doc v3 §4). Internal is never
+ * learned, and a size-less profile (v2-migrated, not yet re-seen) has no
+ * size key and teaches nothing (pitfall A4).
  */
 export async function setScreenZoom(key, factor, { awaitNormalize = false } = {}) {
   if (!Number.isFinite(factor) || factor <= 0) throw new Error('Invalid zoom factor');
   const { screens } = await storage.getState();
-  if (!screens[key]) throw new Error(`Unknown screen key: ${String(key)}`);
-  await storage.upsertScreen(key, { zoomFactor: factor, confirmed: true });
+  const screen = screens[key];
+  if (!screen) throw new Error(`Unknown screen key: ${String(key)}`);
+  await storage.upsertScreen(key, { zoomFactor: factor });
+  const learned = screen.isInternal ? false : await storage.setLearnedDefault(sizeKey(screen), factor);
   const normalizing = (async () => {
     try {
       return await normalizeScreen(key);
@@ -330,12 +426,16 @@ export async function setScreenZoom(key, factor, { awaitNormalize = false } = {}
     }
   })();
   if (awaitNormalize) return normalizing;
-  return { key, factor, normalizing: true };
+  return { key, factor, learned, normalizing: true };
 }
 
-/** Exclude (release) or re-include (re-manage) every tab of a host. */
+/**
+ * Exclude (release) or re-include (re-manage) every tab of a host. Excluding
+ * also forgets the host's per-screen delta rows (doc v3 §5.4).
+ */
 export async function setExcluded(host, excluded) {
   await storage.setExcludedHost(host, excluded);
+  if (excluded) await storage.clearHostDeltas(host);
   const tabs = (await allManageableTabs()).filter((t) => hostOf(t.url) === host);
   let count = 0;
   await runPool(tabs, NORMALIZE_CONCURRENCY, async (tab) => {
@@ -349,50 +449,57 @@ export async function setExcluded(host, excluded) {
   return { host, excluded: Boolean(excluded), tabs: count };
 }
 
-/** Delete one host's delta and re-sync its tabs to the screen default. */
-export async function clearSiteDelta(host) {
-  await storage.setSiteStepDelta(host, 0);
-  const tabs = (await allManageableTabs()).filter((t) => hostOf(t.url) === host);
-  await runPool(tabs, NORMALIZE_CONCURRENCY, (tab) => syncTab(tab.id));
-  return { host, tabs: tabs.length };
-}
-
 /** Wipe all site deltas and normalize every connected screen. */
 export async function clearSiteExceptions() {
   await storage.patchState({ siteStepDeltas: {} });
-  const { displays, screens } = await syncDisplays();
-  const keys = new Set();
-  for (const d of displays) keys.add(matchSavedScreen(d, screens, displays)?.key ?? buildKey(d, displays));
   const results = {};
-  for (const key of keys) results[key] = await normalizeScreen(key);
+  for (const key of await connectedKeys()) results[key] = await normalizeScreen(key);
   return results;
 }
 
 /**
- * Onboarding / new-display CONFIRM: persist chosen zooms, mark onboarding
- * complete, and return. The caller normalizes in the background.
+ * First-run Accept (doc v3 §5.4 / §7): persist the chosen zoom for every
+ * KNOWN key, mark onboarding complete and, for each external whose choice
+ * differs from what the map recommended, teach the map in the same write.
+ * `withLearnedDefault` refuses size-less keys, so a migrated profile that has
+ * never been re-seen cannot poison `learnedDefaults` (pitfall A4). Unknown
+ * keys are ignored. Returns the keys applied; the caller normalizes them.
  */
-export async function confirmSetup({ screens: chosen = {}, defaults = {} } = {}) {
+export async function confirmSetup({ screens: chosen = {} } = {}) {
+  await syncDisplays(); // every connected display has a profile to write into
+  const applied = [];
   await storage.updateState((state) => {
     const screens = { ...state.screens };
-    const nextDefaults = { ...state.defaults };
-    if (Number.isFinite(defaults.internal)) nextDefaults.internal = defaults.internal;
-    if (Number.isFinite(defaults.external)) nextDefaults.external = defaults.external;
-
-    for (const [key, factor] of Object.entries(chosen)) {
-      if (!Number.isFinite(factor) || factor <= 0) continue;
+    let learnedDefaults = { ...state.learnedDefaults };
+    applied.length = 0;
+    for (const [key, raw] of Object.entries(chosen ?? {})) {
+      const factor = Number(raw);
       const existing = screens[key];
-      screens[key] = {
-        key,
-        name: existing?.name ?? (key === INTERNAL_KEY ? 'Built-in Display' : key.replace(/^ext:/, '')),
-        isInternal: existing?.isInternal ?? key === INTERNAL_KEY,
-        lastSeenDisplayId: existing?.lastSeenDisplayId ?? null,
-        zoomFactor: factor,
-        confirmed: true,
-      };
+      if (!existing || !Number.isFinite(factor) || factor <= 0) continue;
+      screens[key] = { ...existing, zoomFactor: factor };
+      applied.push(key);
+      if (!existing.isInternal && !isSameZoom(factor, recommendedZoom(existing, state.learnedDefaults))) {
+        learnedDefaults = withLearnedDefault(learnedDefaults, sizeKey(existing), factor);
+      }
     }
-    return { screens, defaults: nextDefaults, onboardingCompleted: true };
+    return { screens, learnedDefaults, onboardingCompleted: true };
   });
-  await closeSetupWindow();
-  return Object.keys(chosen);
+  return applied;
+}
+
+/**
+ * Rename a screen (doc v3 §5.4): storage write, then refresh the hover title
+ * on the active tab of every window currently on that screen. Throws for an
+ * unknown key so the popup can report it.
+ */
+export async function renameScreen(key, name) {
+  const screen = await storage.renameScreen(key, name);
+  if (!screen) throw new Error(`Unknown screen key: ${String(key)}`);
+  const [state, { windowScreen }, wins] = await Promise.all([storage.getState(), storage.getSession(), normalWindows(true)]);
+  for (const w of wins) {
+    if (windowScreen[String(w.id)] !== key) continue;
+    const active = (w.tabs ?? []).find((t) => t.active);
+    if (active) await badge.update(active, screen, state);
+  }
+  return screen;
 }

@@ -1,6 +1,7 @@
 // Toolbar badge (engineering doc §5.8). Tab-scoped text so it follows the tab.
 import { BADGE } from './constants.js';
 import { expectedZoom, formatPercent, formatDelta } from './zoom-ladder.js';
+import { resolveDelta } from './site-deltas.js';
 import { isManageable, safeCall } from './tab-zoom.js';
 import { hostOf, prettyHost } from './url-rules.js';
 
@@ -35,11 +36,16 @@ export function describe(tab, screen, state) {
   if (!screen) {
     return { text: '', title: 'AutoZoom — screen not resolved yet' };
   }
-  const delta = state.siteStepDeltas?.[host] ?? 0;
+  const { delta, source, inherited } = resolveDelta(host, screen.key, state);
   const zoom = expectedZoom(screen.zoomFactor, delta);
   const pct = Math.round(zoom * 100);
   const parts = [screen.name, formatPercent(zoom)];
-  if (delta) parts.push(`${formatDelta(delta)} for ${prettyHost(host)}`);
+  if (delta) {
+    let detail = `${formatDelta(delta)} for ${prettyHost(host)}`;
+    const from = inherited ? state.screens?.[source]?.name : null;
+    if (from) detail += ` (inherited from ${from})`;
+    parts.push(detail);
+  }
   return {
     text: pct === 100 && !delta ? '' : String(pct),
     color: BADGE.zoom.color,

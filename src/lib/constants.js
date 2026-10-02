@@ -80,14 +80,4 @@ export const MSG = Object.freeze({
   SET_EXCLUDED: 'SET_EXCLUDED',
   CLEAR_SITE_EXCEPTIONS: 'CLEAR_SITE_EXCEPTIONS',
   RELEASE_ALL: 'RELEASE_ALL',
-  // --- v2 leftovers, deleted in step 3 together with the setup window -----
-  GET_SETUP_DATA: 'GET_SETUP_DATA',
-  DISMISS_SETUP: 'DISMISS_SETUP',
-  CLEAR_SITE_DELTA: 'CLEAR_SITE_DELTA',
-  OPEN_ONBOARDING: 'OPEN_ONBOARDING',
 });
-
-// --- v2 leftovers, deleted in step 3 together with the setup window ---------
-export const DEFAULT_ZOOMS = Object.freeze({ internal: 1.0, external: 1.25 });
-export const SETUP_WINDOW = Object.freeze({ width: 420, baseHeight: 180, rowHeight: 64, maxHeight: 720 });
-export const SETUP_MODE = Object.freeze({ ONBOARDING: 'onboarding', NEW_DISPLAY: 'new-display' });
