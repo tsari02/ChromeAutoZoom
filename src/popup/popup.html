@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light dark">
+  <title>AutoZoom</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="header">
+    <img class="logo" src="../../icons/icon-48.png" width="22" height="22" alt="">
+    <h1 class="title">AutoZoom</h1>
+    <label class="switch" title="Pause or resume AutoZoom">
+      <span class="switch-label" id="enabled-label">On</span>
+      <input id="enabled" type="checkbox" role="switch" aria-label="AutoZoom enabled">
+      <span class="track" aria-hidden="true"><span class="knob"></span></span>
+    </label>
+  </header>
+
+  <div id="error" class="banner error" hidden></div>
+
+  <section id="onboarding-banner" class="banner" hidden>
+    <div>
+      <strong>Setup not finished</strong>
+      <div class="muted">Confirm a default zoom for your screens to start.</div>
+    </div>
+    <button id="open-onboarding" class="btn small primary" type="button">Finish setup</button>
+  </section>
+
+  <main id="main" class="main" aria-busy="true">
+    <!-- Current screen -->
+    <section class="card" id="screen-card">
+      <div class="card-head">
+        <span class="eyebrow">Current screen</span>
+        <span id="screen-pill" class="pill"></span>
+      </div>
+      <div class="card-row">
+        <div class="card-main">
+          <div id="screen-name" class="name">Detecting…</div>
+          <div id="screen-sub" class="muted">Default zoom for every site on this screen</div>
+        </div>
+        <div class="stepper" role="group" aria-label="Screen zoom">
+          <button id="screen-down" class="step-btn" type="button" aria-label="Decrease screen zoom">−</button>
+          <select id="screen-zoom" class="zoom-select" aria-label="Screen zoom"></select>
+          <button id="screen-up" class="step-btn" type="button" aria-label="Increase screen zoom">+</button>
+        </div>
+      </div>
+      <div id="screen-quick" class="quick" role="group" aria-label="Quick zoom presets"></div>
+    </section>
+
+    <!-- Current site -->
+    <section class="card" id="site-card">
+      <div class="card-head">
+        <span class="eyebrow">Current site</span>
+        <span id="site-pill" class="pill"></span>
+      </div>
+      <div class="card-row">
+        <div class="card-main">
+          <div id="site-host" class="name">—</div>
+          <div id="site-sub" class="muted"></div>
+        </div>
+        <button id="site-reset" class="btn small" type="button" hidden>Reset</button>
+      </div>
+      <label class="check-row" id="site-exclude-row">
+        <input id="site-exclude" type="checkbox">
+        <span>Exclude this site <span class="muted">(use Chrome's own zoom)</span></span>
+      </label>
+    </section>
+
+    <!-- Saved screens -->
+    <details class="card accordion" id="screens-accordion">
+      <summary>
+        <span class="eyebrow">Saved screens</span>
+        <span id="screens-count" class="pill"></span>
+        <span class="chevron" aria-hidden="true"></span>
+      </summary>
+      <ul id="screens-list" class="screens-list"></ul>
+    </details>
+  </main>
+
+  <footer class="footer">
+    <button id="clear-exceptions" class="link" type="button">Clear all site exceptions</button>
+    <button id="restore" class="link danger" type="button">Restore Chrome's zoom</button>
+  </footer>
+
+  <dialog id="restore-dialog" class="dialog">
+    <form method="dialog">
+      <h2>Restore Chrome's zoom?</h2>
+      <p>Every tab goes back to Chrome's own zoom settings and AutoZoom is paused. Your saved screens and site exceptions are kept; turn AutoZoom back on anytime.</p>
+      <div class="dialog-actions">
+        <button class="btn" value="cancel" type="submit">Cancel</button>
+        <button class="btn primary" value="confirm" type="submit">Restore</button>
+      </div>
+    </form>
+  </dialog>
+
+  <template id="screen-row-template">
+    <li class="screen-row">
+      <div class="card-main">
+        <div class="name"></div>
+        <div class="muted meta"></div>
+      </div>
+      <select class="zoom-select mini" aria-label="Saved screen zoom"></select>
+    </li>
+  </template>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
