@@ -619,12 +619,242 @@ function makeMarquee(outputPath) {
     pngData.writeToFileAtomically($(outputPath), true);
 }
 
+function makePromo1280x800(outputPath) {
+    const w = 1280;
+    const h = 800;
+
+    const rep = $.NSBitmapImageRep.alloc.initWithBitmapDataPlanesPixelsWidePixelsHighBitsPerSampleSamplesPerPixelHasAlphaIsPlanarColorSpaceNameBytesPerRowBitsPerPixel(
+        null, w, h, 8, 4, true, false, $.NSDeviceRGBColorSpace, 0, 0
+    );
+    const ctx = $.NSGraphicsContext.graphicsContextWithBitmapImageRep(rep);
+    $.NSGraphicsContext.setCurrentContext(ctx);
+
+    const fullRect = $.NSMakeRect(0, 0, w, h);
+
+    // 1. Full-bleed background gradient
+    const bgTop = rgba(248, 250, 254, 1.0);
+    const bgBottom = rgba(228, 239, 253, 1.0);
+    const bgGrad = $.NSGradient.alloc.initWithStartingColorEndingColor(bgBottom, bgTop);
+    bgGrad.drawInRectAngle(fullRect, 90.0);
+
+    // Ambient blue glows (left brand + right monitor)
+    const glowInner = rgba(10, 132, 255, 0.13);
+    const glowOuter = rgba(10, 132, 255, 0.0);
+    const glowGrad = $.NSGradient.alloc.initWithStartingColorEndingColor(glowInner, glowOuter);
+    const leftGlow = $.NSMakePoint(250.0, 460.0);
+    glowGrad.drawFromCenterRadiusToCenterRadiusOptions(leftGlow, 0.0, leftGlow, 380.0, 0);
+    const rightGlow = $.NSMakePoint(960.0, 420.0);
+    glowGrad.drawFromCenterRadiusToCenterRadiusOptions(rightGlow, 0.0, rightGlow, 420.0, 0);
+
+    // ------------------------------------------------------------------
+    // LEFT COLUMN: Brand identity + Headline + Copy + Feature Chips
+    // ------------------------------------------------------------------
+    const leftX = 64.0;
+
+    // App icon + Wordmark row
+    const iconSize = 88.0;
+    const iconY = 516.0;
+    drawAppIcon(ctx, leftX, iconY, iconSize, -8, 22.0);
+
+    const brandAttrs = makeTextAttrs(52.0, $.NSFontWeightBold, rgba(29, 29, 31, 1.0), -1.2);
+    drawText("AutoZoom", leftX + iconSize + 20.0, iconY + 15.0, brandAttrs);
+
+    // Tagline / Headline
+    const headlineAttrs = makeTextAttrs(27.5, $.NSFontWeightSemibold, rgba(10, 96, 199, 1.0), -0.5);
+    drawText("Per-Monitor Automatic Zoom", leftX, 442.0, headlineAttrs);
+
+    // Supporting benefit copy
+    const bodyAttrs = makeTextAttrs(18.0, $.NSFontWeightRegular, rgba(74, 85, 104, 1.0), -0.1);
+    drawText("Give every display its own default page zoom.", leftX, 386.0, bodyAttrs);
+    drawText("Switches automatically as windows move between screens.", leftX, 356.0, bodyAttrs);
+
+    // Feature chips (two rows)
+    const chipY1 = 270.0;
+    const w1 = drawFeatureChip(ctx, leftX, chipY1, "Per-Display Defaults");
+    drawFeatureChip(ctx, leftX + w1 + 10.0, chipY1, "Smart Resolution Presets");
+
+    const chipY2 = 222.0;
+    const w2 = drawFeatureChip(ctx, leftX, chipY2, "Relative Cmd + Site Memory");
+    drawFeatureChip(ctx, leftX + w2 + 10.0, chipY2, "100% Offline & Private");
+
+    // ------------------------------------------------------------------
+    // RIGHT COLUMN: Dual-Display Illustration (Laptop 100% -> Monitor 125%)
+    // ------------------------------------------------------------------
+
+    // A. External 27" Monitor (Right, larger)
+    const monW = 372.0;
+    const monH = 240.0;
+    const monX = 846.0;
+    const monY = 306.0;
+    const monCx = monX + monW / 2.0;
+
+    // Stand neck + base
+    const neckW = 42.0;
+    const neckH = 42.0;
+    const neckRect = $.NSMakeRect(monCx - neckW / 2.0, monY - neckH + 4.0, neckW, neckH);
+    const standGrad = $.NSGradient.alloc.initWithStartingColorEndingColor(rgba(180, 190, 204, 1.0), rgba(218, 224, 233, 1.0));
+    standGrad.drawInRectAngle(neckRect, 0.0);
+
+    const baseW = 128.0;
+    const baseH = 10.0;
+    const basePath = $.NSBezierPath.bezierPathWithRoundedRectXRadiusYRadius(
+        $.NSMakeRect(monCx - baseW / 2.0, monY - neckH - 2.0, baseW, baseH), 5.0, 5.0
+    );
+    rgba(164, 176, 192, 1.0).setFill;
+    basePath.fill;
+
+    // Monitor outer frame with elevation shadow
+    const monPath = $.NSBezierPath.bezierPathWithRoundedRectXRadiusYRadius(
+        $.NSMakeRect(monX, monY, monW, monH), 16.0, 16.0
+    );
+    ctx.saveGraphicsState;
+    const monShadow = $.NSShadow.alloc.init;
+    monShadow.setShadowOffset($.NSMakeSize(0, -12));
+    monShadow.setShadowBlurRadius(28.0);
+    monShadow.setShadowColor(rgba(15, 35, 70, 0.22));
+    monShadow.set;
+    rgba(28, 32, 38, 1.0).setFill;
+    monPath.fill;
+    ctx.restoreGraphicsState;
+
+    // Monitor inner display area
+    const monInset = 9.0;
+    const monScreenRect = $.NSMakeRect(monX + monInset, monY + monInset + 4.0, monW - monInset * 2, monH - monInset * 2 - 4.0);
+    const monScreenPath = $.NSBezierPath.bezierPathWithRoundedRectXRadiusYRadius(monScreenRect, 9.0, 9.0);
+    const wpGrad = $.NSGradient.alloc.initWithStartingColorEndingColor(rgba(214, 232, 255, 1.0), rgba(238, 246, 255, 1.0));
+    wpGrad.drawInBezierPathAngle(monScreenPath, 90.0);
+
+    // Browser window inside External Monitor (scaled to show 125% zoom)
+    drawBrowserWindow(
+        ctx,
+        monX + 22.0,
+        monY + 22.0,
+        monW - 44.0,
+        monH - 42.0,
+        1.15,
+        "125",
+        "docs.example.com",
+        true
+    );
+
+    // B. MacBook Laptop (Left of monitor)
+    const lapW = 234.0;
+    const lapH = 152.0;
+    const lapX = 578.0;
+    const lapY = 284.0;
+    const lapCx = lapX + lapW / 2.0;
+
+    // Laptop lid / bezel
+    const lapPath = $.NSBezierPath.bezierPathWithRoundedRectXRadiusYRadius(
+        $.NSMakeRect(lapX, lapY, lapW, lapH), 12.0, 12.0
+    );
+    ctx.saveGraphicsState;
+    const lapShadow = $.NSShadow.alloc.init;
+    lapShadow.setShadowOffset($.NSMakeSize(0, -10));
+    lapShadow.setShadowBlurRadius(22.0);
+    lapShadow.setShadowColor(rgba(15, 35, 70, 0.20));
+    lapShadow.set;
+    rgba(34, 39, 46, 1.0).setFill;
+    lapPath.fill;
+    ctx.restoreGraphicsState;
+
+    // Laptop inner screen
+    const lapInset = 7.0;
+    const lapScreenRect = $.NSMakeRect(lapX + lapInset, lapY + lapInset, lapW - lapInset * 2, lapH - lapInset * 2);
+    const lapScreenPath = $.NSBezierPath.bezierPathWithRoundedRectXRadiusYRadius(lapScreenRect, 6.0, 6.0);
+    wpGrad.drawInBezierPathAngle(lapScreenPath, 90.0);
+
+    // Browser window inside Laptop (100% zoom)
+    drawBrowserWindow(
+        ctx,
+        lapX + 16.0,
+        lapY + 15.0,
+        lapW - 32.0,
+        lapH - 30.0,
+        0.84,
+        "100",
+        "docs.example.com",
+        false
+    );
+
+    // Laptop aluminum base deck
+    const deckW = 268.0;
+    const deckH = 12.0;
+    const deckX = lapCx - deckW / 2.0;
+    const deckY = lapY - deckH + 2.0;
+    const deckPath = $.NSBezierPath.bezierPathWithRoundedRectXRadiusYRadius(
+        $.NSMakeRect(deckX, deckY, deckW, deckH), 5.0, 5.0
+    );
+    const deckGrad = $.NSGradient.alloc.initWithStartingColorEndingColor(rgba(168, 178, 192, 1.0), rgba(212, 220, 230, 1.0));
+    deckGrad.drawInBezierPathAngle(deckPath, 0.0);
+
+    // C. Curved automatic transition arc above the laptop into the external monitor
+    const arcPath = $.NSBezierPath.bezierPath;
+    const p0 = $.NSMakePoint(lapCx + 10.0, lapY + lapH + 14.0);
+    const p1 = $.NSMakePoint(monX - 12.0, 482.0);
+    const c1 = $.NSMakePoint(lapCx + 16.0, 498.0);
+    const c2 = $.NSMakePoint(monX - 64.0, 482.0);
+    arcPath.moveToPoint(p0);
+    arcPath.curveToPointControlPoint1ControlPoint2(p1, c1, c2);
+    arcPath.setLineWidth(3.0);
+    arcPath.setLineCapStyle($.NSLineCapStyleRound);
+    rgba(10, 132, 255, 0.78).setStroke;
+    arcPath.stroke;
+
+    // Arrowhead at p1
+    const arrowPath = $.NSBezierPath.bezierPath;
+    arrowPath.moveToPoint($.NSMakePoint(p1.x - 10.0, p1.y + 7.5));
+    arrowPath.lineToPoint(p1);
+    arrowPath.lineToPoint($.NSMakePoint(p1.x - 10.0, p1.y - 7.5));
+    arrowPath.setLineWidth(3.0);
+    arrowPath.setLineCapStyle($.NSLineCapStyleRound);
+    arrowPath.setLineJoinStyle($.NSLineJoinStyleRound);
+    rgba(10, 132, 255, 0.92).setStroke;
+    arrowPath.stroke;
+
+    // Origin dot at p0
+    rgba(10, 132, 255, 0.85).setFill;
+    $.NSBezierPath.bezierPathWithOvalInRect($.NSMakeRect(p0.x - 4.5, p0.y - 4.5, 9.0, 9.0)).fill;
+
+    // Floating "Auto-Switch" pill cleanly above the arc
+    const autoText = "Auto 100% → 125%";
+    const autoAttrs = makeTextAttrs(13.0, $.NSFontWeightBold, $.NSColor.whiteColor, -0.1);
+    const autoSize = measureText(autoText, autoAttrs);
+    const autoW = autoSize.width + 24.0;
+    const autoH = 28.0;
+    const autoX = 674.0;
+    const autoY = 512.0;
+    const autoRect = $.NSMakeRect(autoX, autoY, autoW, autoH);
+    const autoPill = $.NSBezierPath.bezierPathWithRoundedRectXRadiusYRadius(autoRect, autoH / 2.0, autoH / 2.0);
+
+    ctx.saveGraphicsState;
+    const autoSh = $.NSShadow.alloc.init;
+    autoSh.setShadowOffset($.NSMakeSize(0, -4));
+    autoSh.setShadowBlurRadius(10.0);
+    autoSh.setShadowColor(rgba(10, 132, 255, 0.30));
+    autoSh.set;
+    rgba(10, 132, 255, 1.0).setFill;
+    autoPill.fill;
+    ctx.restoreGraphicsState;
+
+    drawText(autoText, autoX + (autoW - autoSize.width) / 2.0, autoY + (autoH - autoSize.height) / 2.0 + 0.5, autoAttrs);
+
+    // D. Screen label cards underneath each display
+    const labelY = 192.0;
+    drawScreenLabelCard(ctx, lapCx, labelY, "MacBook Screen", "1728×1117", "100%", false);
+    drawScreenLabelCard(ctx, monCx, labelY, "External Display", "2560×1440", "125%", true);
+
+    const pngData = rep.representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $.NSDictionary.dictionary);
+    pngData.writeToFileAtomically($(outputPath), true);
+}
+
 function run(argv) {
     const outDir = argv[0];
     makeSmallPromo(outDir + "/promo-small.png", "Per-Monitor Automatic Zoom");
     makeSmallPromo(outDir + "/promo-small-minimal.png", "");
     makeMarquee(outDir + "/promo-marquee.png");
     makeMarqueeMinimal(outDir + "/promo-marquee-minimal.png");
+    makePromo1280x800(outDir + "/promo-1280x800.png");
 }
 """
 
@@ -721,6 +951,7 @@ def main():
         ("promo-small-minimal.png", "440x280"),
         ("promo-marquee.png", "1400x560"),
         ("promo-marquee-minimal.png", "1400x560"),
+        ("promo-1280x800.png", "1280x800"),
     ]
     for name, dims in outputs:
         rgba_png_to_rgb24_png(os.path.join(out_dir, name))
@@ -730,4 +961,5 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
 
