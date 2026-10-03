@@ -119,6 +119,10 @@ _TBD before submission_
 **Contact Email** [REQUIRED]
 _TBD before submission_
 
+**Trader Declaration (EEA)** [REQUIRED]
+- **Status**: Non-Trader (if publishing as an individual/hobbyist without commercial intent or monetization)
+- *Note*: If declared as a Trader, EU law requires your physical address and phone number to be displayed publicly on the store listing.
+
 **Support URL / Email** [RECOMMENDED]
 Project repository issues page
 
