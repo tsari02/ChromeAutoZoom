@@ -49,30 +49,36 @@ def render(size):
     """Return a list of rows, each a list of (r, g, b, a) tuples."""
     n = size * SS
     s = float(n)  # work in supersampled units
-    # Geometry (fractions of the icon)
+    # Chrome Web Store requires 128x128 icons to have a 96x96 artwork area
+    # with 16px transparent padding per side (16 / 128 = 0.125).
+    # Smaller toolbar/management sizes (16, 48) use a tight margin for legibility.
     half = s / 2.0
-    margin = s * 0.03
-    corner = s * 0.22
-    lens_cx, lens_cy = s * 0.44, s * 0.44
-    lens_r = s * 0.22
-    ring_w = max(1.0, s * 0.055)
+    margin_frac = (16.0 / 128.0) if size == 128 else 0.03
+    margin = s * margin_frac
+    box = s - 2.0 * margin
+    corner = box * 0.234
+    lens_cx = margin + box * 0.436
+    lens_cy = margin + box * 0.436
+    lens_r = box * 0.234
+    ring_w = max(1.0, box * 0.0585)
     plus_len = lens_r * 0.55
-    plus_w = max(1.0, s * 0.045)
-    handle_w = max(1.0, s * 0.075)
+    plus_w = max(1.0, box * 0.048)
+    handle_w = max(1.0, box * 0.080)
     hx0 = lens_cx + lens_r * math.cos(math.radians(45)) + ring_w * 0.2
     hy0 = lens_cy + lens_r * math.sin(math.radians(45)) + ring_w * 0.2
-    hx1, hy1 = s * 0.80, s * 0.80
+    hx1 = margin + box * 0.819
+    hy1 = margin + box * 0.819
 
     hi = [[(0, 0, 0, 0)] * n for _ in range(n)]
     for y in range(n):
         py = y + 0.5
         for x in range(n):
             px = x + 0.5
-            d = sd_rounded_rect(px, py, half, half, half - margin, corner)
+            d = sd_rounded_rect(px, py, half, half, box / 2.0, corner)
             if d > 0.75:
                 continue
             bg_a = max(0.0, min(1.0, 0.5 - d))  # 1px AA edge
-            t = py / s
+            t = max(0.0, min(1.0, (py - margin) / box))
             col = lerp(BG_TOP, BG_BOTTOM, t)
 
             # White magnifier coverage
