@@ -12,25 +12,33 @@ Automatically switches page zoom between your laptop screen and external monitor
 
 **Detailed Description** [REQUIRED]
 
-AutoZoom gives every screen its own default page zoom and switches between them automatically, so web pages are comfortably readable on your MacBook and on your external monitor without pressing Cmd + and Cmd − all day.
+AutoZoom gives every monitor its own default zoom level and switches between them automatically — so web pages are always comfortably readable whether you're working on your laptop screen or an external display.
 
-Each display you use gets a saved default zoom. The built-in display starts at 100%; each external monitor starts from a recommendation based on its resolution — 125% for most 27-inch and ultrawide monitors, 110% for a 2560×1080 ultrawide, 150% for an unscaled 4K display, 100% for a 1080p one — and you can pick any value on Chrome's zoom scale (25%–500%) per screen. When you drag a Chrome window to another screen, plug a monitor in, unplug it, or switch to a window on a different display, the page you are looking at is set to that screen's zoom right away. Background tabs are updated the moment you switch to them, so even windows with 100+ tabs stay fast.
+No more pressing Cmd + and Cmd − every time you dock, undock, or drag a window.
 
-Per-site adjustments are relative, not absolute, and they are remembered per screen. If you press Cmd + once on a site with tiny text while you are on your 125% monitor, AutoZoom remembers "+1 step" for that site there and carries the same step over to your other screens — 150% on the monitor, 110% on the laptop — until you adjust the site on one of them, after which that screen keeps its own setting for the site. Press Cmd − to undo a step on the screen you're on. Sites you want left alone (design tools, dashboards) can be excluded with one click; Chrome then handles their zoom exactly as if AutoZoom weren't installed.
+FEATURES
+• 🖥️ Per-Display Default Zoom — Set 100% on your laptop and 125% on your external monitor. Moving a window across screens switches the page zoom instantly.
+• ⚡ Automatic Screen Detection — Plug in a monitor, unplug it, or drag a window between screens. AutoZoom immediately applies the right zoom for that display.
+• 🎯 Smart Resolution Presets — Automatically suggests the ideal zoom for 1080p, 1440p QHD, Ultrawide, and 4K displays the moment you connect them.
+• 🔍 Relative Per-Site Zoom — Need bigger text on a specific website? Adjust it once with Cmd + and AutoZoom remembers the boost on your monitor and scales it proportionately on your other screens.
+• 🚫 Site Exclusions — Exclude design tools, spreadsheets, or dashboards with one click so Chrome manages them normally.
+• 🏷️ Custom Screen Names — Rename your displays (e.g., "MacBook Screen", "Desk Ultrawide", "Office 4K") to easily organize multi-monitor setups.
+• ⏸️ Pause & 1-Click Restore — Pause anytime to freeze tabs at their current zoom, or click "Restore Chrome's zoom" to instantly return all tabs to Chrome's native zoom.
+• 🚀 Built for Speed — Background tabs update lazily only when you switch to them, keeping your browser fast and responsive even with 100+ open tabs.
 
-How to use it:
-1. Install AutoZoom. The toolbar popup opens with every connected display and its recommended zoom. Adjust if you like and click "Accept and start". Nothing is changed until you do. (If the popup doesn't appear on its own, click the AutoZoom icon in the toolbar.)
-2. That's it. Move windows between screens and watch pages re-zoom. The toolbar badge shows the zoom in effect for the current tab.
-3. Click the toolbar icon anytime to change a screen's default, rename a screen, exclude the current site, edit saved screens, or pause AutoZoom.
-4. When you connect a monitor AutoZoom hasn't seen before, it gets the recommended zoom for its resolution right away — no prompt — and you can change it from the popup. Screens are shown as "MacBook Screen" and "External Display" (or the name macOS reports) with their resolution underneath; rename any screen to tell identical monitors apart.
+HOW TO USE
+1. Click the AutoZoom icon in your toolbar to see your connected displays and recommended zoom levels.
+2. Click "Accept and start" (or adjust any screen to your preferred zoom).
+3. That's it! Browse normally — AutoZoom handles all zoom adjustments automatically in the background.
 
-Pause at any time — your tabs keep the zoom they have. One click on "Restore Chrome's zoom" hands everything back to Chrome and pauses AutoZoom. AutoZoom applies zoom to each tab individually and never rewrites Chrome's own per-site zoom memory, so restoring or uninstalling leaves your original Chrome zoom settings exactly as they were.
+PRIVACY & PERMISSIONS
+• 🔒 100% Offline & Private — AutoZoom never collects personal data, never tracks your browsing, and makes zero network requests. All settings stay securely on your device.
+• 🛡️ Why does Chrome show "Read your browsing history"? — Chrome requires this permission for AutoZoom to read the website address (hostname) of open tabs to apply per-site zoom rules. Page content is never read, and your history is never collected, stored, or transmitted anywhere.
 
-Privacy: AutoZoom works entirely on your computer. It does not read page content, does not collect browsing history, and sends nothing anywhere. Chrome shows the "Read your browsing history" notice at install because AutoZoom needs to know each tab's website address to apply per-site zoom; that information never leaves your device. See the privacy policy for details.
-
-Designed for macOS laptops with one or more external displays. Requires Chrome 127 or newer.
-
-Support: open an issue on the project repository or email the address on this listing.
+COMPATIBILITY & SUPPORT
+• Designed for macOS laptops with external displays (supports multi-monitor setups, ultrawides, and 4K monitors).
+• Requires Google Chrome 127 or newer.
+• Need help or have feedback? Open an issue on GitHub or reach out via email.
 
 **Category** [REQUIRED]
 Accessibility
@@ -51,8 +59,8 @@ English
 | Screenshot 3 [RECOMMENDED] | 1280×800 or 640×400 | ⬜ Not created | `store-assets/screenshot-3-two-screens.png` |
 | Screenshot 4 | 1280×800 or 640×400 | ⬜ Not created (spec changed for 1.1.0: no Reset button, inherited label) | `store-assets/screenshot-4-site-exception.png` |
 | Screenshot 5 | 1280×800 or 640×400 | ⬜ Not created | |
-| Small Promo Tile [RECOMMENDED] | 440×280 | ⬜ Not created | `store-assets/promo-small.png` |
-| Marquee Promo Tile | 1400×560 | ⬜ Not created | |
+| Small Promo Tile [RECOMMENDED] | 440×280 (24-bit RGB PNG, no alpha) | ✅ Ready | `store-assets/promo-small.png` (or `store-assets/promo-small-minimal.png`, generated by `scripts/generate-promo.py`) |
+| Marquee Promo Tile | 1400×560 (24-bit RGB PNG, no alpha) | ✅ Ready | `store-assets/promo-marquee.png` (or `store-assets/promo-marquee-minimal.png`, generated by `scripts/generate-promo.py`) |
 
 ### Screenshot Notes
 1. **Popup over a page on an external monitor** — toolbar popup open showing the **two-line Current Screen card** — "External Display" (editable name) over "2560×1440" (or the monitor's name when macOS reports one; the second line is the resolution only — no "recommended" suffix since the 1.1.0 polish) — the current site card, and the Saved screens accordion. Badge shows `125`. **Retake for 1.1.0**: the 1.0.0 single-line card is gone.

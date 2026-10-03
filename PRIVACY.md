@@ -1,6 +1,6 @@
 # Privacy Policy for AutoZoom — Per-Monitor Automatic Zoom
 
-Last updated: 2026-10-02
+Last updated: 2026-10-03
 
 AutoZoom does not collect, store on any server, or transmit any personal data or browsing information. Everything the extension needs lives on your own computer, inside Chrome's extension storage, and is deleted when you uninstall the extension.
 
@@ -35,8 +35,8 @@ This extension does not use any third-party services.
 
 All data stays on your device for as long as the extension is installed. You can:
 
-- remove a single site's adjustment with **Reset** in the toolbar popup, or all of them with **Clear all site exceptions**;
-- un-exclude a site by unticking **Exclude this site**;
+- remove a single site's adjustment by adjusting it back to the screen default (or excluding it), or remove all site adjustments at once with **Clear all site exceptions**;
+- un-exclude a site by unchecking **Exclude this site**;
 - delete everything by uninstalling the extension (Chrome removes the extension's storage automatically).
 
 ## Changes to this policy
