@@ -365,6 +365,7 @@ body {
   border-top: 1px solid var(--card-border);
 }
 .first-run-row:first-child { border-top: 0; }
+.first-run-row .sub:empty { display: none; }
 
 .footer {
   display: flex;
@@ -389,20 +390,5 @@ body {
   outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
-
-/* Dialog ---------------------------------------------------------------- */
-.dialog {
-  width: 280px;
-  border: 1px solid var(--card-border);
-  border-radius: 12px;
-  background: var(--card);
-  color: var(--text);
-  padding: 16px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
-}
-.dialog::backdrop { background: rgba(0, 0, 0, 0.3); }
-.dialog h2 { margin: 0 0 6px; font-size: 14px; }
-.dialog p { margin: 0 0 14px; color: var(--muted); }
-.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 [hidden] { display: none !important; }

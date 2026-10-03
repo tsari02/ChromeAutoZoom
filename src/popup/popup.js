@@ -40,7 +40,6 @@ const els = {
   screensCount: $('screens-count'),
   clearExceptions: $('clear-exceptions'),
   restore: $('restore'),
-  restoreDialog: $('restore-dialog'),
   screenRowTemplate: $('screen-row-template'),
   firstRunRowTemplate: $('first-run-row-template'),
 };
@@ -59,7 +58,6 @@ function showError(message) {
   els.error.hidden = !message;
 }
 
-const sameStep = (a, b) => Number.isFinite(a) && Number.isFinite(b) && nearestStepIndex(a) === nearestStepIndex(b);
 const sizeText = (s) => (s?.width && s?.height ? `${s.width}×${s.height}` : '');
 
 function fillSelect(select, factor) {
@@ -131,21 +129,12 @@ function renderFirstRun(v) {
     ...rows.map((r) => {
       const node = els.firstRunRowTemplate.content.firstElementChild.cloneNode(true);
       node.querySelector('.name').textContent = r.name;
+      // Line 2: logical size only ("1728×1117"). The recommendation is what the
+      // selector starts at; it is not labelled (1.1.0 polish, D26).
+      node.querySelector('.sub').textContent = sizeText(r);
       const select = node.querySelector('.zoom-select');
       fillSelect(select, r.zoomFactor ?? r.recommended);
       select.dataset.key = r.key;
-      select.dataset.recommended = String(r.recommended);
-      const sub = node.querySelector('.sub');
-      const paint = () => {
-        const parts = [];
-        const size = sizeText(r);
-        if (size) parts.push(size);
-        if (sameStep(Number(select.value), r.recommended)) parts.push('recommended');
-        else parts.push(`${formatPercent(r.recommended)} recommended`);
-        sub.textContent = parts.join(' · ');
-      };
-      select.addEventListener('change', paint);
-      paint();
       return node;
     }),
   );
@@ -170,12 +159,9 @@ function renderScreen(v) {
     els.screenName.title = s.name;
     els.screenRename.hidden = false;
   }
-  // Line 2: "2560×1440 · 125% recommended", or "· recommended" when already there.
-  const parts = [];
-  const size = sizeText(s);
-  if (size) parts.push(size);
-  if (Number.isFinite(s.recommended)) parts.push(sameStep(s.zoomFactor, s.recommended) ? 'recommended' : `${formatPercent(s.recommended)} recommended`);
-  els.screenSub.textContent = parts.join(' · ') || 'Default zoom for every site on this screen';
+  // Line 2: logical size only ("2560×1440"). The recommendation is what the
+  // selector starts at; it is not labelled (1.1.0 polish, D26).
+  els.screenSub.textContent = sizeText(s) || 'Default zoom for every site on this screen';
   els.screenPill.textContent = s.isInternal ? 'Built-in' : s.connected ? 'External' : 'Not connected';
   els.screenPill.className = `pill ${s.isInternal ? 'blue' : ''}`;
   fillSelect(els.screenZoom, s.zoomFactor);
@@ -346,11 +332,16 @@ els.screensList.addEventListener('click', (e) => {
 
 els.clearExceptions.addEventListener('click', () => act({ type: MSG.CLEAR_SITE_EXCEPTIONS }));
 
-els.restore.addEventListener('click', () => {
-  if (typeof els.restoreDialog.showModal === 'function') els.restoreDialog.showModal();
-});
-els.restoreDialog.addEventListener('close', () => {
-  if (els.restoreDialog.returnValue === 'confirm') act({ type: MSG.RELEASE_ALL });
+// One click: pause + hand every tab back to Chrome's own zoom (RELEASE_ALL →
+// engine.restoreChromeZoom). No confirmation dialog (1.1.0 polish, D24): the
+// header flipping to "Paused" is the feedback, and the switch turns it back on.
+els.restore.addEventListener('click', async () => {
+  els.restore.disabled = true;
+  try {
+    await act({ type: MSG.RELEASE_ALL });
+  } finally {
+    els.restore.disabled = false;
+  }
 });
 
 // Live updates while the popup is open.

@@ -27,11 +27,9 @@ export function describe(tab, screen, state) {
   }
   const host = hostOf(tab.url);
   if (state.excludedHosts?.[host]) {
-    return {
-      text: BADGE.pinned.text,
-      color: BADGE.pinned.color,
-      title: `AutoZoom — ${prettyHost(host)} is excluded (Chrome's own zoom applies)`,
-    };
+    // No badge text for excluded sites (1.1.0 polish, D25) — the hover title
+    // and the popup's amber "Excluded" pill carry the information.
+    return { text: '', title: `AutoZoom — ${prettyHost(host)} is excluded (Chrome's own zoom applies)` };
   }
   if (!screen) {
     return { text: '', title: 'AutoZoom — screen not resolved yet' };

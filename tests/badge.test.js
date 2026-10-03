@@ -23,10 +23,11 @@ describe('badge', () => {
     assert.equal(b.text, 'OFF');
   });
 
-  test('PIN for excluded hosts', () => {
+  test('excluded hosts: no badge text or colour, title still says excluded (1.1.0 polish, D25)', () => {
     const b = describeBadge(tab(), screen, state({ excludedHosts: { 'news.ycombinator.com': true } }));
-    assert.equal(b.text, 'PIN');
-    assert.match(b.title, /excluded/);
+    assert.equal(b.text, '');
+    assert.equal(b.color, undefined);
+    assert.match(b.title, /news\.ycombinator\.com is excluded/);
   });
 
   test('3-char percentage without % sign; empty at 100% with no delta', () => {

@@ -54,10 +54,9 @@ export const TIMINGS = Object.freeze({
 /** Max concurrent applyZoom calls during normalizeScreen (doc §5.6). */
 export const NORMALIZE_CONCURRENCY = 8;
 
-/** Badge appearance (doc §5.8). */
+/** Badge appearance (doc §5.8). Excluded sites show no text since 1.1.0 (D25). */
 export const BADGE = Object.freeze({
   off: { text: 'OFF', color: '#8E8E93' },
-  pinned: { text: 'PIN', color: '#FF9F0A' },
   zoom: { color: '#0A84FF' },
 });
 

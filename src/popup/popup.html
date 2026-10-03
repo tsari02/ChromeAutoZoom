@@ -83,19 +83,9 @@
 
   <footer class="footer" id="footer">
     <button id="clear-exceptions" class="link" type="button">Clear all site exceptions</button>
-    <button id="restore" class="link danger" type="button">Restore Chrome's zoom</button>
+    <button id="restore" class="link danger" type="button"
+      title="Hands every tab back to Chrome's own zoom and pauses AutoZoom (turning AutoZoom off only keeps the zoom tabs have now). Screens and site exceptions are kept; turn it back on anytime.">Restore Chrome's zoom</button>
   </footer>
-
-  <dialog id="restore-dialog" class="dialog">
-    <form method="dialog">
-      <h2>Restore Chrome's zoom?</h2>
-      <p>Every tab goes back to Chrome's own zoom settings and AutoZoom is paused. This is the only action that hands tabs back to Chrome — turning AutoZoom off just keeps the zoom your tabs have now. Saved screens and site exceptions are kept; turn AutoZoom back on anytime.</p>
-      <div class="dialog-actions">
-        <button class="btn" value="cancel" type="submit">Cancel</button>
-        <button class="btn primary" value="confirm" type="submit">Restore</button>
-      </div>
-    </form>
-  </dialog>
 
   <template id="screen-row-template">
     <li class="screen-row">

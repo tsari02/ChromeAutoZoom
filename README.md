@@ -19,7 +19,7 @@ AutoZoom gives each physical display its own default page zoom (100% on the buil
 3. Open `chrome://extensions`, turn on **Developer mode** (top right).
 4. Click **Load unpacked** and select **`dist/unpacked/`**.
 5. The **toolbar popup opens in its first-run state**, listing every connected display with a recommended zoom (see the table below). Adjust if you like and click **Accept and start** — nothing is zoomed before that, and closing the popup just shows the same state next time. If Chrome doesn't open the popup by itself (its own "extension added" bubble is often in the way), AutoZoom tries once more the next time a window gets focus; after that, click the AutoZoom icon (behind the puzzle-piece menu until you pin it) to see the same first-run screen.
-6. Pin the toolbar icon. The badge shows the zoom in effect for the current tab (`125`), `PIN` for an excluded site, `OFF` when paused, and nothing at 100%. A monitor you connect later needs no setup: its tabs get the recommended zoom for its resolution right away, and you can change it from the popup.
+6. Pin the toolbar icon. The badge shows the zoom in effect for the current tab (`125`), `OFF` when paused, and nothing at 100% or on an excluded site (the hover title still tells you a site is excluded). A monitor you connect later needs no setup: its tabs get the recommended zoom for its resolution right away, and you can change it from the popup.
 
 After editing code, re-run `sh scripts/package-extension.sh` and click ↻ on the extension card (or load `dist/unpacked/` once and let Chrome pick up the overwritten files on reload).
 
@@ -108,12 +108,12 @@ To stop inheriting on one screen, press `Cmd −`/`Cmd +` there until the site i
 
 ## Renaming screens
 
-The Current Screen card has two lines — an editable name (✎, up to 40 characters; Enter/blur saves, Esc cancels, empty reverts to the default) over `2560×1440 · 125% recommended`. Defaults are "MacBook Screen" and "External Display" (or the name macOS reports). Names are cosmetic: screen keys and site adjustments are untouched by a rename, and the Saved screens list is editable in the same way.
+The Current Screen card has two lines — an editable name (✎, up to 40 characters; Enter/blur saves, Esc cancels, empty reverts to the default) over the screen's logical size (`2560×1440`). Defaults are "MacBook Screen" and "External Display" (or the name macOS reports). Names are cosmetic: screen keys and site adjustments are untouched by a rename, and the Saved screens list is editable in the same way.
 
 ## Pause vs. Restore Chrome's zoom
 
 - **Pause** (header toggle; label *Paused*) freezes every tab exactly where it is and AutoZoom stops intervening. Nothing is re-zoomed. A paused tab follows Chrome's own zoom again on its next navigation; a `Cmd +`/`Cmd −` while paused is per-tab, is not remembered by AutoZoom or by Chrome, and is lost on that tab's next navigation. **Resume** re-applies screen defaults and site steps to every tab on every connected screen.
-- **Restore Chrome's zoom** (footer) is the one action that hands every tab back to Chrome's native per-origin zoom — what you would see with AutoZoom uninstalled. It also switches AutoZoom off; your screens and site steps are kept for when you turn it back on.
+- **Restore Chrome's zoom** (footer) is the one action that hands every tab back to Chrome's native per-origin zoom — what you would see with AutoZoom uninstalled. It acts on a single click, with no confirmation: the header switches to *Paused* and AutoZoom is off; your screens and site steps are kept, and flipping the switch back on re-applies everything.
 
 ## Display names and screen keys on macOS
 
